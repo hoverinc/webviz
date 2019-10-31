@@ -52,19 +52,27 @@ const targetHeadingSelector: (CameraState) => number = createSelector(
   }
 );
 
+const rollSelector = createSelector(
+  stateSelector,
+  ({ roll }) => roll || 0
+);
+
 // orientation of the camera
 const orientationSelector: (CameraState) => Vec4 = createSelector(
   perspectiveSelector,
   phiSelector,
   thetaOffsetSelector,
-  (perspective, phi, thetaOffset) => {
+  rollSelector,
+  (perspective, phi, thetaOffset, roll) => {
     const result = quat.identity([0, 0, 0, 0]);
     quat.rotateZ(result, result, -thetaOffset);
 
-    // phi is ignored in 2D mode
+    // phi and roll are ignored in 2D mode
     if (perspective) {
+      quat.rotateY(result, result, roll);
       quat.rotateX(result, result, phi);
     }
+
     return result;
   }
 );
