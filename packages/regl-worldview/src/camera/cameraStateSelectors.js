@@ -165,13 +165,19 @@ const viewSelector: (CameraState) => Mat4 = createSelector(
   orientationSelector,
   positionSelector,
   targetHeadingSelector,
-  ({ target, targetOffset, perspective }, orientation, position, targetHeading) => {
+  rollSelector,
+  ({ target, targetOffset, perspective, principalAxis }, orientation, position, targetHeading, roll) => {
     const m = mat4.identity([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     // apply the steps described above in reverse because we use right-multiplication
 
     // 5. rotate camera to point forward
     mat4.multiply(m, m, mat4.fromQuat(TEMP_MAT, quat.invert(TEMP_QUAT, orientation)));
+
+    if (principalAxis) {
+      // 4.5 rotate the camera about its principal axis
+      mat4.multiply(m, m, mat4.fromRotation(TEMP_VEC3, roll, principalAxis));
+    }
 
     // 4. move camera to the origin
     if (perspective) {
