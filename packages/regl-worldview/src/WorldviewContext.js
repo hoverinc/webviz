@@ -294,7 +294,6 @@ export class WorldviewContext {
         const excludedObjects = [];
         const mouseEventsWithCommands = [];
         let counter = 0;
-        let hitObjects = [];
 
         camera.draw(this.cameraStore.state, () => {
           // Every iteration in this loop clears the framebuffer, draws the hitmap objects that have NOT already been
@@ -332,17 +331,6 @@ export class WorldviewContext {
               });
 
               currentObjectId = getIdFromPixel(pixel);
-
-              const snap = regl.read();
-              const ids = getIdsFromFrame(snap);
-              const uniqIds = uniq(ids);
-
-              const hitIds = uniqIds.filter((id) => id !== 0);
-              hitObjects = hitIds.map((id) => {
-                const hitObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(id);
-                excludedObjects.push(hitObject);
-                return hitObject;
-              });
 
               const mouseEventObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(currentObjectId);
               // console.log("mouseEventObject: ", mouseEventObject);
