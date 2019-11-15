@@ -222,16 +222,23 @@ export function getIdFromPixel(rgb: Uint8Array): number {
   return b | (g << 8) | (r << 16);
 }
 
-export function getIdsFromFrame(rgbs: Uint8Array): number[] {
-  const ids = [];
+export function getIdsFromFrame(rgbs: Uint8Array, minPixels = 1): number[] {
+  const ids = {};
   for (let index = 0; index < rgbs.length; index += 4) {
     const r = rgbs[index];
     const g = rgbs[index + 1];
     const b = rgbs[index + 2];
     const id = b | (g << 8) | (r << 16);
-    ids.push(id);
+    if (id) {
+      const pixelCount = ids[id] || 0;
+      ids[id] = pixelCount + 1;
+    }
   }
-  return ids;
+  if (minPixels === 1) {
+    return Object.keys(ids);
+  }
+
+  return Object.keys(ids).filter((key) => ids[key] >= minPixels);
 }
 
 // gl-matrix clone of three.js Vector3.setFromSpherical

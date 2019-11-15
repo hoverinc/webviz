@@ -244,10 +244,8 @@ export class WorldviewContext {
           this._drawInput(true, excludedObjects);
 
           const snap = regl.read();
-          const ids = getIdsFromFrame(snap);
-          const uniqIds = uniq(ids);
+          const hitIds = getIdsFromFrame(snap);
 
-          const hitIds = uniqIds.filter((id) => id !== 0);
           const hitObjects = hitIds.map((id) => {
             const hitObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(id);
             excludedObjects.push(hitObject);
