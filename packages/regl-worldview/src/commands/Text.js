@@ -43,12 +43,17 @@ function insertGlobalCss() {
       top: 0;
       left: 0;
       will-change: transform;
+      font-family: sans-serif;
+      font-size: 10px;
     }
     .regl-worldview-text-inner {
       position: relative;
       left: -50%;
       top: -0.5em;
       white-space: pre-line;
+      font-family: sans-serif;
+      padding: 4px;
+      border-radius: 5px;
     }
   `;
   if (document.body) {
