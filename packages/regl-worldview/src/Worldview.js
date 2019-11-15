@@ -235,7 +235,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     (e: any).persist();
     worldviewContext
       .readHitmap(canvasX, canvasY, !!this.props.enableStackedObjectEvents, this.props.maxStackedObjectCount)
-      .then(([mouseEventsWithCommands, hitObjects]) => {
+      .then((mouseEventsWithCommands) => {
         if (worldviewHandler) {
           const mouseEvents = mouseEventsWithCommands.map(([mouseEventObject]) => mouseEventObject);
           handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler);
@@ -244,11 +244,6 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
         for (const [command, mouseEvents] of mouseEventsByCommand.entries()) {
           command.handleMouseEvent(mouseEvents, ray, e, mouseEventName);
         }
-
-        // if (this.props.onVisibleObjectsChange) {
-        //   console.log("hitObjects: ", hitObjects);
-        //   this.props.onVisibleObjectsChange(hitObjects);
-        // }
       })
       .catch((e) => {
         console.error(e);

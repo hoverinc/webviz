@@ -370,7 +370,7 @@ export class WorldviewContext {
             // eslint-disable-next-line no-unmodified-loop-condition
           } while (currentObjectId !== 0 && enableStackedObjectEvents);
 
-          resolve([mouseEventsWithCommands, hitObjects]);
+          resolve(mouseEventsWithCommands);
         });
       });
     });
