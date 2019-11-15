@@ -6,6 +6,7 @@
 //  found in the LICENSE file in the root directory of this source tree.
 //  You may not use this file except in compliance with the License.
 
+import debounce from "lodash/debounce";
 import mapValues from "lodash/mapValues";
 import pickBy from "lodash/pickBy";
 import * as React from "react";
@@ -133,6 +134,9 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     // call paint to set the correct viewportWidth and viewportHeight for camera so non-regl components
     // such as Text can get the correct screen coordinates for the first render
     worldviewContext.paint();
+
+    this._checkObjectVisibilty();
+    // this.visibilityCheck = setInterval(this._checkObjectVisibilty, 500);
   }
 
   componentWillUnmount() {
@@ -140,6 +144,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       cancelAnimationFrame(this._tick);
     }
     this.state.worldviewContext.destroy();
+    // clearInterval(this.visibilityCheck);
   }
 
   componentDidUpdate() {
@@ -156,6 +161,9 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
         worldviewContext.paint();
       });
     }
+
+    // put this after the scene finish painting??
+    this._debouceCheckObjectVisibilty();
   }
 
   _onDoubleClick = (e: MouseEvent) => {
@@ -184,6 +192,18 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       this._dragStartPos = null;
     }
   };
+
+  _checkObjectVisibilty = () => {
+    const { worldviewContext } = this.state;
+    const { onVisibleObjectsChange } = this.props;
+    if (onVisibleObjectsChange) {
+      worldviewContext.readHitmap(null, null, null, null, true).then((hitObjects) => {
+        onVisibleObjectsChange(hitObjects);
+      });
+    }
+  };
+
+  _debouceCheckObjectVisibilty = debounce(this._checkObjectVisibilty, 500);
 
   _onMouseInteraction = (e: MouseEvent, mouseEventName: MouseEventEnum) => {
     const { worldviewContext } = this.state;
@@ -215,7 +235,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     (e: any).persist();
     worldviewContext
       .readHitmap(canvasX, canvasY, !!this.props.enableStackedObjectEvents, this.props.maxStackedObjectCount)
-      .then((mouseEventsWithCommands) => {
+      .then(([mouseEventsWithCommands, hitObjects]) => {
         if (worldviewHandler) {
           const mouseEvents = mouseEventsWithCommands.map(([mouseEventObject]) => mouseEventObject);
           handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler);
@@ -224,6 +244,11 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
         for (const [command, mouseEvents] of mouseEventsByCommand.entries()) {
           command.handleMouseEvent(mouseEvents, ray, e, mouseEventName);
         }
+
+        // if (this.props.onVisibleObjectsChange) {
+        //   console.log("hitObjects: ", hitObjects);
+        //   this.props.onVisibleObjectsChange(hitObjects);
+        // }
       })
       .catch((e) => {
         console.error(e);

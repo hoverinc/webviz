@@ -222,6 +222,18 @@ export function getIdFromPixel(rgb: Uint8Array): number {
   return b | (g << 8) | (r << 16);
 }
 
+export function getIdsFromFrame(rgbs: Uint8Array): number[] {
+  const ids = [];
+  for (let index = 0; index < rgbs.length; index += 4) {
+    const r = rgbs[index];
+    const g = rgbs[index + 1];
+    const b = rgbs[index + 2];
+    const id = b | (g << 8) | (r << 16);
+    ids.push(id);
+  }
+  return ids;
+}
+
 // gl-matrix clone of three.js Vector3.setFromSpherical
 // phi: polar angle (between poles, 0 - pi)
 // theta: azimuthal angle (around equator, 0 - 2pi)

@@ -7,6 +7,7 @@
 //  You may not use this file except in compliance with the License.
 
 import debounce from "lodash/debounce";
+import uniq from "lodash/uniq";
 import * as React from "react";
 import createREGL from "regl";
 
@@ -23,7 +24,7 @@ import type {
   GetChildrenForHitmap,
   AssignNextColorsFn,
 } from "./types";
-import { getIdFromPixel, intToRGB } from "./utils/commandUtils";
+import { getIdFromPixel, intToRGB, getIdsFromFrame } from "./utils/commandUtils";
 import { getNodeEnv } from "./utils/common";
 import HitmapObjectIdManager from "./utils/HitmapObjectIdManager";
 import { getRayFromClick } from "./utils/Raycast";
@@ -217,12 +218,58 @@ export class WorldviewContext {
 
   _debouncedPaint = debounce(this.paint, 10);
 
+  readEntireHitMap = () => {
+    if (!this.initializedData) {
+      return new Promise((_, reject) => reject(new Error("regl data not initialized yet")));
+    }
+
+    const { regl, camera, _fbo } = this.initializedData;
+    const { width, height } = this.dimension;
+
+    // regl will only resize the framebuffer if the size changed
+    // it uses floored whole pixel values
+    _fbo.resize(Math.floor(width), Math.floor(height));
+
+    return new Promise((resolve) => {
+      // tell regl to use a framebuffer for this render
+      regl({ framebuffer: _fbo })(() => {
+        // clear the framebuffer
+        regl.clear({ color: intToRGB(0), depth: 1 });
+        // const currentObjectId = 0;
+        const excludedObjects = [];
+        // const mouseEventsWithCommands = [];
+
+        camera.draw(this.cameraStore.state, () => {
+          regl.clear({ color: intToRGB(0), depth: 1 });
+          this._drawInput(true, excludedObjects);
+
+          const snap = regl.read();
+          const ids = getIdsFromFrame(snap);
+          const uniqIds = uniq(ids);
+
+          const hitIds = uniqIds.filter((id) => id !== 0);
+          const hitObjects = hitIds.map((id) => {
+            const hitObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(id);
+            excludedObjects.push(hitObject);
+            return hitObject;
+          });
+
+          resolve(hitObjects);
+        });
+      });
+    });
+  };
+
   readHitmap(
     canvasX: number,
     canvasY: number,
     enableStackedObjectEvents: boolean,
-    maxStackedObjectCount: number
+    maxStackedObjectCount: number,
+    readEntireMap: boolean
   ): Promise<Array<[MouseEventObject, Command]>> {
+    if (readEntireMap) {
+      return this.readEntireHitMap();
+    }
     if (!this.initializedData) {
       return new Promise((_, reject) => reject(new Error("regl data not initialized yet")));
     }
@@ -247,6 +294,7 @@ export class WorldviewContext {
         const excludedObjects = [];
         const mouseEventsWithCommands = [];
         let counter = 0;
+        let hitObjects = [];
 
         camera.draw(this.cameraStore.state, () => {
           // Every iteration in this loop clears the framebuffer, draws the hitmap objects that have NOT already been
@@ -273,6 +321,7 @@ export class WorldviewContext {
             if (x < Math.floor(width) && y < Math.floor(height) && x >= 0 && y >= 0) {
               const pixel = new Uint8Array(4);
 
+              // const snap = regl.read();
               // read pixel value from the frame buffer
               regl.read({
                 x,
@@ -283,7 +332,20 @@ export class WorldviewContext {
               });
 
               currentObjectId = getIdFromPixel(pixel);
+
+              const snap = regl.read();
+              const ids = getIdsFromFrame(snap);
+              const uniqIds = uniq(ids);
+
+              const hitIds = uniqIds.filter((id) => id !== 0);
+              hitObjects = hitIds.map((id) => {
+                const hitObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(id);
+                excludedObjects.push(hitObject);
+                return hitObject;
+              });
+
               const mouseEventObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(currentObjectId);
+              // console.log("mouseEventObject: ", mouseEventObject);
 
               // Check an error case: if we see an ID/color that we don't know about, it means that some command is
               // drawing a color into the hitmap that it shouldn't be.
@@ -315,11 +377,12 @@ export class WorldviewContext {
                 }
               }
             }
+
             // If we haven't enabled stacked object events, break out of the loop immediately.
             // eslint-disable-next-line no-unmodified-loop-condition
           } while (currentObjectId !== 0 && enableStackedObjectEvents);
 
-          resolve(mouseEventsWithCommands);
+          resolve([mouseEventsWithCommands, hitObjects]);
         });
       });
     });
