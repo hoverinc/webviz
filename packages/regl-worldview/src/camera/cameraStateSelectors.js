@@ -165,7 +165,7 @@ const viewSelector: (CameraState) => Mat4 = createSelector(
   orientationSelector,
   positionSelector,
   targetHeadingSelector,
-  ({ target, targetOffset, perspective }, orientation, position, targetHeading) => {
+  ({ target, targetOffset, perspective, viewMatrix }, orientation, position, targetHeading) => {
     const m = mat4.identity([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     // apply the steps described above in reverse because we use right-multiplication
@@ -193,6 +193,9 @@ const viewSelector: (CameraState) => Mat4 = createSelector(
     }
     mat4.translate(m, m, TEMP_VEC3);
 
+    if (viewMatrix) {
+      return viewMatrix;
+    }
     return m;
   }
 );
