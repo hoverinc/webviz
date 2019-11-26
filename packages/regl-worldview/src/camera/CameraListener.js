@@ -363,7 +363,7 @@ export default class CameraListener extends React.Component<Props> {
     // stop the wheel event here, as wheel propagation through the entire dom
     // can cause the browser to slow down & thrash
     e.preventDefault();
-    e.stopPropagation();
+    // e.stopPropagation();
     this._shiftKey = e.shiftKey;
 
     // with osx trackpad scrolling, slow to medium pixelY is around +/- 1 to 10
