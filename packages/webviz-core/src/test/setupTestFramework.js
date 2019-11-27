@@ -1,8 +1,41 @@
 // @flow
+//
+//  Copyright (c) 2019-present, GM Cruise LLC
+//
+//  This source code is licensed under the Apache License, Version 2.0,
+//  found in the LICENSE file in the root directory of this source tree.
+//  You may not use this file except in compliance with the License.
 
 import diff from "jest-diff";
 import { isEqual } from "lodash";
-import "react-hooks-testing-library/cleanup-after-each";
+
+// Always mock reportError and fail if it was called during the test without resetting it. Note that
+// we have to do this here instead of in setup.js since here we have access to jest methods.
+jest.mock("webviz-core/src/util/reportError", () => {
+  const fn = jest.fn();
+  // $FlowFixMe
+  fn.setErrorHandler = () => {};
+  return fn;
+});
+beforeEach(() => {
+  const reportError: any = require("webviz-core/src/util/reportError");
+  reportError.expectCalledDuringTest = () => {
+    if (reportError.mock.calls.length === 0) {
+      // $FlowFixMe
+      fail("Expected reportError to have been called during the test, but it was never called!"); // eslint-disable-line
+    }
+    reportError.mockReset();
+  };
+});
+afterEach(() => {
+  const reportError: any = require("webviz-core/src/util/reportError");
+  if (reportError.mock.calls.length > 0) {
+    const calls = reportError.mock.calls;
+    reportError.mockReset();
+    // $FlowFixMe
+    fail(`reportError has been called during this test (call reportError.expectCalledDuringTest(); at the end of your test if you expect this): ${JSON.stringify(calls)}`); // eslint-disable-line
+  }
+});
 
 // this file runs once jest has injected globals so you can modify the expect matchers
 global.expect.extend({

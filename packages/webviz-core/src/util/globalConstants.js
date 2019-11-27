@@ -14,12 +14,13 @@ export const LOAD_ENTIRE_BAG_QUERY_KEY = "load-entire-bag";
 export const MEASURE_DATA_PROVIDERS_QUERY_KEY = "_measureDataProviders";
 export const DEMO_QUERY_KEY = "demo";
 export const AUTOPLAY_QUERY_KEY = "autoplay";
-export const ENABLE_NODE_PLAYGROUND_QUERY_KEY = "enable-node-playground";
+export const SEEK_TO_QUERY_KEY = "seek-to";
 export const LAYOUT_QUERY_KEY = "layout";
 export const LAYOUT_URL_QUERY_KEY = "layout-url";
 export const PATCH_LAYOUT_QUERY_KEY = "layout-patch";
 export const OLD_GLOBAL_VARIABLES_QUERY_KEY = "global-variables";
 export const GLOBAL_VARIABLES_QUERY_KEY = "global-data";
+export const FRAME_SIZE_MS_QUERY_KEY = "frame-size-ms";
 
 export const DEFAULT_WEBVIZ_NODE_PREFIX = "/webviz_node/";
 
@@ -31,6 +32,8 @@ export const SECOND_BAG_PREFIX = "/webviz_bag_2";
 export const POINT_CLOUD_DATATYPE = "sensor_msgs/PointCloud2";
 export const POSE_STAMPED_DATATYPE = "geometry_msgs/PoseStamped";
 export const LASER_SCAN_DATATYPE = "sensor_msgs/LaserScan";
+
+export const USER_ERROR_PREFIX = "[WEBVIZ USER ERROR]";
 
 export const COLORS = {
   RED: { r: 1.0, g: 0.2, b: 0.2, a: 1.0 },

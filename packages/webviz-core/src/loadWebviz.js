@@ -10,6 +10,8 @@ import memoize from "lodash/memoize";
 import React from "react";
 import ReactDOM from "react-dom";
 
+import { DIAGNOSTIC_TOPIC } from "./util/globalConstants";
+
 // We put all the internal requires inside functions, so that when they load the hooks have been properly set.
 
 const defaultHooks = {
@@ -47,10 +49,6 @@ const defaultHooks = {
     ];
   },
   panelsByCategory() {
-    const { ENABLE_NODE_PLAYGROUND_QUERY_KEY } = require("webviz-core/src/util/globalConstants");
-    const params = new URLSearchParams(window.location.search);
-    const nodePlaygroundEnabled = params.has(ENABLE_NODE_PLAYGROUND_QUERY_KEY);
-
     const DiagnosticStatusPanel = require("webviz-core/src/panels/diagnostics/DiagnosticStatusPanel").default;
     const DiagnosticSummary = require("webviz-core/src/panels/diagnostics/DiagnosticSummary").default;
     const ImageViewPanel = require("webviz-core/src/panels/ImageView").default;
@@ -78,7 +76,7 @@ const defaultHooks = {
     ];
 
     const utilities = [
-      nodePlaygroundEnabled ? { title: "Node Playground", component: NodePlayground } : null,
+      { title: "Node Playground", component: NodePlayground },
       { title: "Notes", component: Note },
       { title: "Webviz Internals", component: Internals },
     ];
@@ -92,31 +90,17 @@ const defaultHooks = {
   },
   helpPageFootnote: () => null,
   perPanelHooks: memoize(() => {
-    const World = require("webviz-core/src/panels/ThreeDimensionalViz/World").default;
     const LaserScanVert = require("webviz-core/src/panels/ThreeDimensionalViz/LaserScanVert").default;
-    const FileMultipleIcon = require("@mdi/svg/svg/file-multiple.svg").default;
-    const CheckboxBlankCircleOutline = require("@mdi/svg/svg/checkbox-blank-circle-outline.svg").default;
     const { defaultMapPalette } = require("webviz-core/src/panels/ThreeDimensionalViz/commands/utils");
 
-    const { SECOND_BAG_PREFIX } = require("webviz-core/src/util/globalConstants");
-
     return {
-      Panel: {
-        topicPrefixes: {
-          "": {
-            labelText: "Default",
-            icon: CheckboxBlankCircleOutline,
-            iconPrefix: "",
-          },
-          [SECOND_BAG_PREFIX]: {
-            labelText: "Input 2",
-            icon: FileMultipleIcon,
-            iconPrefix: "2",
-            tooltipText: "topics prefixed with '/webviz_bag_2'",
-          },
+      DiagnosticSummary: {
+        defaultConfig: {
+          pinnedIds: [],
+          hardwareIdFilter: "",
+          topicToRender: DIAGNOSTIC_TOPIC,
         },
       },
-      DiagnosticSummary: { defaultConfig: { pinnedIds: [], hardwareIdFilter: "" } },
       ImageView: {
         defaultConfig: {
           cameraTopic: "",
@@ -124,6 +108,9 @@ const defaultHooks = {
           scale: 0.2,
           transformMarkers: false,
           synchronize: false,
+          mode: "fit",
+          zoomPercentage: 100,
+          offset: [0, 0],
         },
         imageMarkerDatatypes: ["visualization_msgs/ImageMarker"],
         imageMarkerArrayDatatypes: [],
@@ -140,9 +127,30 @@ const defaultHooks = {
           pinTopics: false,
           topicSettings: {},
         },
+        allSupportedMarkers: [
+          "arrow",
+          "cube",
+          "cubeList",
+          "cylinder",
+          "filledPolygon",
+          "grid",
+          "instancedLineList",
+          "laserScan",
+          "linedConvexHull",
+          "lineList",
+          "lineStrip",
+          "pointcloud",
+          "points",
+          "poseMarker",
+          "sphere",
+          "sphereList",
+          "text",
+          "triangleList",
+        ],
+        renderAdditionalMarkers: () => {},
         topics: [],
         icons: {},
-        WorldComponent: World,
+        AdditionalToolbarItems: () => null,
         LaserScanVert,
         setGlobalVariablesInSceneBuilder: (globalVariables, selectionState, topicsToRender) => ({
           selectionState,
@@ -161,7 +169,10 @@ const defaultHooks = {
         },
         consumePose: () => {},
         getMarkerColor: (topic, markerColor) => markerColor,
-        getDefaultTopicTree: () => ({ name: "root" }),
+        getDefaultTopicTree: () => ({
+          name: "root",
+          children: [{ name: "TF", children: [], description: "Visualize relationships between /tf frames." }],
+        }),
         hasBlacklistTopics: () => false,
         ungroupedNodesCategory: "Topics",
         rootTransformFrame: "map",
@@ -176,7 +187,6 @@ const defaultHooks = {
     return <Root store={store} />;
   },
   topicsWithIncorrectHeaders: () => [],
-  useRaven: () => true,
   load: () => {},
   onPanelClose: () => {},
   onPanelSwap: () => {},
