@@ -23,7 +23,7 @@ import type {
   GetChildrenForHitmap,
   AssignNextColorsFn,
 } from "./types";
-import { getIdFromPixel, intToRGB } from "./utils/commandUtils";
+import { getIdFromPixel, getIdsFromPixels, intToRGB } from "./utils/commandUtils";
 import { getNodeEnv } from "./utils/common";
 import HitmapObjectIdManager from "./utils/HitmapObjectIdManager";
 import { getRayFromClick } from "./utils/Raycast";
@@ -216,6 +216,65 @@ export class WorldviewContext {
   }
 
   _debouncedPaint = debounce(this.paint, 10);
+
+  readHitmapBox(
+    canvasX: number,
+    canvasY: number,
+    hitboxWidth: number = 1,
+    hitboxHeight: number = 1
+  ): Promise<Array<[MouseEventObject, Command]>> {
+    if (!this.initializedData) {
+      return new Promise((_, reject) => reject(new Error("regl data not initialized yet")));
+    }
+
+    const { regl, camera, _fbo } = this.initializedData;
+    const { width, height } = this.dimension;
+
+    const x = canvasX;
+    // 0,0 corresponds to the bottom left in the webgl context, but the top left in window coordinates
+    const y = height - canvasY;
+
+    // regl will only resize the framebuffer if the size changed
+    // it uses floored whole pixel values
+    _fbo.resize(Math.floor(width), Math.floor(height));
+
+    return new Promise((resolve) => {
+      // tell regl to use a framebuffer for this render
+      regl({ framebuffer: _fbo })(() => {
+        // clear the framebuffer
+        regl.clear({ color: intToRGB(0), depth: 1 });
+        // const currentObjectId = 0;
+        const excludedObjects = [];
+        const mouseEventsWithCommands = [];
+
+        camera.draw(this.cameraStore.state, () => {
+          regl.clear({ color: intToRGB(0), depth: 1 });
+          this._drawInput(true, excludedObjects);
+
+          const pixels = regl.read({
+            x,
+            y,
+            width: hitboxWidth,
+            height: hitboxHeight,
+          });
+          const hitIds = getIdsFromPixels(pixels);
+
+          hitIds.forEach((currentObjectId) => {
+            const mouseEventObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(currentObjectId);
+            if (currentObjectId > 0 && mouseEventObject.object) {
+              const command = this._hitmapObjectIdManager.getCommandForObject(mouseEventObject.object);
+              excludedObjects.push(mouseEventObject);
+              if (command) {
+                mouseEventsWithCommands.push([mouseEventObject, command]);
+              }
+            }
+          });
+
+          resolve(mouseEventsWithCommands);
+        });
+      });
+    });
+  }
 
   readHitmap(
     canvasX: number,

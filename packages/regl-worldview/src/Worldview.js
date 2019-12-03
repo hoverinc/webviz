@@ -187,16 +187,64 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
   };
 
   _onMouseUp = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
-    this._onMouseInteraction(e, "onMouseUp");
     const { _dragStartPos } = this;
     if (_dragStartPos) {
       const deltaX = e.clientX - _dragStartPos.x;
       const deltaY = e.clientY - _dragStartPos.y;
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
-        this._onMouseInteraction(e, "onClick");
-      }
       this._dragStartPos = null;
+
+      if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
+        this._onMouseInteraction(e, "onMouseUp");
+        this._onMouseInteraction(e, "onClick");
+        return;
+      }
+
+      /**
+       * Below are logic for getting objects within a hitmap box
+       */
+      const mouseEventName = "onMouseUp";
+
+      const { worldviewContext } = this.state;
+      const worldviewHandler = this.props[mouseEventName];
+
+      if (!(e.target instanceof window.HTMLElement) || e.button !== 0) {
+        return;
+      }
+
+      const { top: clientTop, left: clientLeft } = e.target.getBoundingClientRect();
+      const { clientX, clientY } = e;
+
+      const canvasX = clientX - clientLeft;
+      const canvasY = clientY - clientTop;
+      const ray = worldviewContext.raycast(canvasX, canvasY);
+      if (!ray) {
+        return;
+      }
+      // console.log("clientY: ", canvasY, deltaY);
+      const x = deltaX > 0 ? canvasX - deltaX : canvasX;
+      const y = deltaY > 0 ? canvasY : canvasY - deltaY;
+
+      // reading hitmap is async so we need to persist the event to use later in the event handler
+      (e: any).persist();
+      worldviewContext
+        .readHitmapBox(x, y, Math.abs(deltaX), Math.abs(deltaY))
+        .then((mouseEventsWithCommands) => {
+          const mouseEventsByCommand: Map<Command, Array<MouseEventObject>> = aggregate(mouseEventsWithCommands);
+          for (const [command, mouseEvents] of mouseEventsByCommand.entries()) {
+            command.handleMouseEvent(mouseEvents, ray, e, mouseEventName);
+            if (e.isPropagationStopped()) {
+              break;
+            }
+          }
+          if (worldviewHandler && !e.isPropagationStopped()) {
+            const mouseEvents = mouseEventsWithCommands.map(([mouseEventObject]) => mouseEventObject);
+            handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler);
+          }
+        })
+        .catch((e) => {
+          console.error(e);
+        });
     }
   };
 

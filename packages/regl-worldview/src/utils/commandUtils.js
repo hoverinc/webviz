@@ -222,6 +222,25 @@ export function getIdFromPixel(rgb: Uint8Array): number {
   return b | (g << 8) | (r << 16);
 }
 
+export function getIdsFromPixels(rgbs, minPixels = 1): number[] {
+  const ids = {};
+  for (let index = 0; index < rgbs.length; index += 4) {
+    const r = rgbs[index];
+    const g = rgbs[index + 1];
+    const b = rgbs[index + 2];
+    const id = b | (g << 8) | (r << 16);
+    if (id) {
+      const pixelCount = ids[id] || 0;
+      ids[id] = pixelCount + 1;
+    }
+  }
+  if (minPixels === 1) {
+    return Object.keys(ids);
+  }
+
+  return Object.keys(ids).filter((key) => ids[key] >= minPixels);
+}
+
 // gl-matrix clone of three.js Vector3.setFromSpherical
 // phi: polar angle (between poles, 0 - pi)
 // theta: azimuthal angle (around equator, 0 - 2pi)
