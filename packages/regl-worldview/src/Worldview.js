@@ -245,10 +245,10 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const normalizedDragStartY = -(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1;
 
     // use normalized coordinates to calculate offset position in the canvas
-    const offsetX = ((normalizedX + 1) * clientWidth) / 2;
-    const offsetY = ((-normalizedY + 1) * clientHeight) / 2;
-    const dragStartOffsetX = ((normalizedDragStartX + 1) * clientWidth) / 2;
-    const dragStartOffsetY = ((-normalizedDragStartY + 1) * clientHeight) / 2;
+    const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
+    const offsetY = Math.floor(((-normalizedY + 1) * clientHeight) / 2);
+    const dragStartOffsetX = Math.floor(((normalizedDragStartX + 1) * clientWidth) / 2);
+    const dragStartOffsetY = Math.floor(((-normalizedDragStartY + 1) * clientHeight) / 2);
 
     const deltaX = offsetX - dragStartOffsetX;
     const deltaY = offsetY - dragStartOffsetY;
@@ -309,8 +309,8 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
 
     // use normalized coordinates to calculate offset position in the canvas
-    const offsetX = ((normalizedX + 1) * clientWidth) / 2;
-    const offsetY = ((-normalizedY + 1) * clientHeight) / 2;
+    const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
+    const offsetY = Math.floor(((-normalizedY + 1) * clientHeight) / 2);
 
     const canvasX = offsetX;
     const canvasY = offsetY;
