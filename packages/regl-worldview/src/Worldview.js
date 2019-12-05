@@ -179,7 +179,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
   };
 
   _onMouseDown = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
-    this._dragStartPos = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
+    this._dragStartPos = { x: e.clientX, y: e.clientY };
     this._onMouseInteraction(e, "onMouseDown");
   };
 
@@ -190,9 +190,9 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { offsetX, offsetY } = e.nativeEvent;
-    const deltaX = offsetX - _dragStartPos.x;
-    const deltaY = offsetY - _dragStartPos.y;
+    const { clientX, clientY } = e;
+    const deltaX = clientX - _dragStartPos.x;
+    const deltaY = clientY - _dragStartPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
     if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
@@ -210,9 +210,9 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { offsetX, offsetY } = e.nativeEvent;
-    const deltaX = offsetX - _dragStartPos.x;
-    const deltaY = offsetY - _dragStartPos.y;
+    const { clientX, clientY } = e;
+    const deltaX = clientX - _dragStartPos.x;
+    const deltaY = clientY - _dragStartPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
     if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
@@ -233,9 +233,25 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { offsetX, offsetY } = e.nativeEvent;
-    const deltaX = offsetX - _dragStartPos.x;
-    const deltaY = offsetY - _dragStartPos.y;
+    const { clientX, clientY } = e;
+    const { clientWidth, clientHeight } = e.target;
+    const boundingClientRect = e.target.getBoundingClientRect();
+    const { width, height, right, bottom } = boundingClientRect;
+
+    // convert to normalized coordinates in the canvas
+    const normalizedX = ((clientX - (right - width)) / width) * 2 - 1;
+    const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
+    const normalizedDragStartX = ((_dragStartPos.x - (right - width)) / width) * 2 - 1;
+    const normalizedDragStartY = -(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1;
+
+    // use normalized coordinates to calculate offset position in the canvas
+    const offsetX = ((normalizedX + 1) * clientWidth) / 2;
+    const offsetY = ((-normalizedY + 1) * clientHeight) / 2;
+    const dragStartOffsetX = ((normalizedDragStartX + 1) * clientWidth) / 2;
+    const dragStartOffsetY = ((-normalizedDragStartY + 1) * clientHeight) / 2;
+
+    const deltaX = offsetX - dragStartOffsetX;
+    const deltaY = offsetY - dragStartOffsetY;
 
     const { worldviewContext } = this.state;
     const worldviewHandler = this.props[mouseEventName];
@@ -283,7 +299,18 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { offsetX, offsetY } = e.nativeEvent;
+    const { clientX, clientY } = e;
+    const { clientWidth, clientHeight } = e.target;
+    const boundingClientRect = e.target.getBoundingClientRect();
+    const { width, height, right, bottom } = boundingClientRect;
+
+    // convert to normalized coordinates in the canvas
+    const normalizedX = ((clientX - (right - width)) / width) * 2 - 1;
+    const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
+
+    // use normalized coordinates to calculate offset position in the canvas
+    const offsetX = ((normalizedX + 1) * clientWidth) / 2;
+    const offsetY = ((-normalizedY + 1) * clientHeight) / 2;
 
     const canvasX = offsetX;
     const canvasY = offsetY;
