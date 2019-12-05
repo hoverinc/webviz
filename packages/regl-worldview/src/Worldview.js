@@ -178,7 +178,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
   };
 
   _onMouseDown = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
-    this._dragStartPos = { x: e.clientX, y: e.clientY };
+    this._dragStartPos = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
     this._onMouseInteraction(e, "onMouseDown");
   };
 
@@ -189,9 +189,11 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const deltaX = e.clientX - _dragStartPos.x;
-    const deltaY = e.clientY - _dragStartPos.y;
+    const { offsetX, offsetY } = e.nativeEvent;
+    const deltaX = offsetX - _dragStartPos.x;
+    const deltaY = offsetY - _dragStartPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
     if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
       this._onMouseInteraction(e, "onMouseMove");
       return;
@@ -207,9 +209,11 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const deltaX = e.clientX - _dragStartPos.x;
-    const deltaY = e.clientY - _dragStartPos.y;
+    const { offsetX, offsetY } = e.nativeEvent;
+    const deltaX = offsetX - _dragStartPos.x;
+    const deltaY = offsetY - _dragStartPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
     if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
       this._onMouseInteraction(e, "onMouseUp");
       this._onMouseInteraction(e, "onClick");
@@ -228,8 +232,9 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const deltaX = e.clientX - _dragStartPos.x;
-    const deltaY = e.clientY - _dragStartPos.y;
+    const { offsetX, offsetY } = e.nativeEvent;
+    const deltaX = offsetX - _dragStartPos.x;
+    const deltaY = offsetY - _dragStartPos.y;
 
     const { worldviewContext } = this.state;
     const worldviewHandler = this.props[mouseEventName];
@@ -238,11 +243,8 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { top: clientTop, left: clientLeft } = e.target.getBoundingClientRect();
-    const { clientX, clientY } = e;
-
-    const canvasX = clientX - clientLeft;
-    const canvasY = clientY - clientTop;
+    const canvasX = offsetX;
+    const canvasY = offsetY;
     const ray = worldviewContext.raycast(canvasX, canvasY);
     if (!ray) {
       return;
@@ -280,11 +282,10 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { top: clientTop, left: clientLeft } = e.target.getBoundingClientRect();
-    const { clientX, clientY } = e;
+    const { offsetX, offsetY } = e.nativeEvent;
 
-    const canvasX = clientX - clientLeft;
-    const canvasY = clientY - clientTop;
+    const canvasX = offsetX;
+    const canvasY = offsetY;
     const ray = worldviewContext.raycast(canvasX, canvasY);
     if (!ray) {
       return;
