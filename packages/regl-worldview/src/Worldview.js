@@ -46,6 +46,7 @@ export type BaseProps = {|
   children?: React.Node,
   style: { [styleAttribute: string]: number | string },
 
+  pointerLockDisabled?: boolean,
   cameraState?: $Shape<CameraState>,
   onCameraStateChange?: (CameraState) => void,
   defaultCameraState?: $Shape<CameraState>,
@@ -368,7 +369,17 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
   }
 
   render() {
-    const { width, height, showDebug, keyMap, shiftKeys, style, cameraState, onCameraStateChange } = this.props;
+    const {
+      width,
+      height,
+      showDebug,
+      keyMap,
+      shiftKeys,
+      style,
+      cameraState,
+      onCameraStateChange,
+      pointerLockDisabled,
+    } = this.props;
     const { worldviewContext } = this.state;
     // If we are supplied controlled camera state and no onCameraStateChange callback
     // then there is a 'fixed' camera from outside of worldview itself.
@@ -395,7 +406,11 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
         {isFixedCamera ? (
           canvasHtml
         ) : (
-          <CameraListener cameraStore={worldviewContext.cameraStore} keyMap={keyMap} shiftKeys={shiftKeys}>
+          <CameraListener
+            pointerLockDisabled={pointerLockDisabled}
+            cameraStore={worldviewContext.cameraStore}
+            keyMap={keyMap}
+            shiftKeys={shiftKeys}>
             {canvasHtml}
           </CameraListener>
         )}

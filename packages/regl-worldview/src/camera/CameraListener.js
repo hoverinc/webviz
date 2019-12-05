@@ -38,6 +38,7 @@ type Props = {|
   cameraStore: CameraStore,
   keyMap?: CameraKeyMap,
   shiftKeys: boolean,
+  pointerLockDisabled: boolean,
   children?: React.ChildrenArray<React.Element<any> | null>,
 |};
 
@@ -206,7 +207,9 @@ export default class CameraListener extends React.Component<Props> {
   };
 
   startDragging(e: MouseEvent) {
-    if (e.button !== 0 && this._el && typeof this._el.requestPointerLock === "function") {
+    const { pointerLockDisabled } = this.props;
+    // disable pointer lock - TODO control this with a prop such as disableCameraControl
+    if (!pointerLockDisabled && e.button !== 0 && this._el && typeof this._el.requestPointerLock === "function") {
       this._el.requestPointerLock();
     }
     window.addEventListener("mousemove", this._onWindowMouseMove);
