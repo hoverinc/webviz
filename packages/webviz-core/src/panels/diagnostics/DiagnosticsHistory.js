@@ -19,7 +19,6 @@ import {
   computeDiagnosticInfo,
 } from "./util";
 import * as PanelAPI from "webviz-core/src/PanelAPI";
-import { DIAGNOSTIC_TOPIC } from "webviz-core/src/util/globalConstants";
 
 export type DiagnosticAutocompleteEntry = {|
   name: string,
@@ -37,11 +36,12 @@ export type DiagnosticsBuffer = {|
 
 type Props = {|
   children: (DiagnosticsBuffer) => Node,
+  topic: string,
 |};
 
-export function useDiagnostics(): DiagnosticsBuffer {
+export function useDiagnostics(topic: string): DiagnosticsBuffer {
   const { reducedValue: diagnostics } = PanelAPI.useMessages<DiagnosticsBuffer>({
-    topics: [DIAGNOSTIC_TOPIC],
+    topics: [topic],
 
     restore: useCallback(
       () => ({
@@ -103,7 +103,7 @@ export function useDiagnostics(): DiagnosticsBuffer {
   return diagnostics;
 }
 
-export default function DiagnosticsHistory({ children }: Props) {
-  const diagnostics = useDiagnostics();
+export default function DiagnosticsHistory({ children, topic }: Props) {
+  const diagnostics = useDiagnostics(topic);
   return children(diagnostics);
 }

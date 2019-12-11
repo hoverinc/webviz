@@ -9,13 +9,12 @@
 import { vec3 } from "gl-matrix";
 import hoistNonReactStatics from "hoist-non-react-statics";
 import { omit } from "lodash";
-import * as React from "react";
+import React, { type Node, useCallback, useLayoutEffect } from "react";
 import { hot } from "react-hot-loader/root";
 import { useSelector } from "react-redux";
-import { cameraStateSelectors, type CameraState } from "regl-worldview";
+import { cameraStateSelectors, type CameraState, DEFAULT_CAMERA_STATE } from "regl-worldview";
 
 import { FrameCompatibility } from "webviz-core/src/components/MessageHistory/FrameCompatibility";
-import { useShallowMemo } from "webviz-core/src/components/MessageHistory/hooks";
 import { useMessagePipeline } from "webviz-core/src/components/MessagePipeline";
 import Panel from "webviz-core/src/components/Panel";
 import { getGlobalHooks } from "webviz-core/src/loadWebviz";
@@ -26,14 +25,15 @@ import {
   getEquivalentOffsetsWithoutTarget,
   useComputedCameraState,
 } from "webviz-core/src/panels/ThreeDimensionalViz/threeDimensionalVizUtils";
-import treeBuilder, { Selections } from "webviz-core/src/panels/ThreeDimensionalViz/TopicSelector/treeBuilder";
+import {
+  type TopicDisplayMode,
+  TOPIC_DISPLAY_MODES,
+} from "webviz-core/src/panels/ThreeDimensionalViz/TopicSelector/TopicDisplayModeSelector";
 import Transforms from "webviz-core/src/panels/ThreeDimensionalViz/Transforms";
 import withTransforms from "webviz-core/src/panels/ThreeDimensionalViz/withTransforms";
 import type { Frame, Topic } from "webviz-core/src/players/types";
 import type { SaveConfig } from "webviz-core/src/types/panels";
 import { TRANSFORM_TOPIC } from "webviz-core/src/util/globalConstants";
-
-const { useState, useCallback, useEffect, useLayoutEffect } = React;
 
 export type ThreeDimensionalVizConfig = {
   autoTextBackgroundColor?: boolean,
@@ -46,7 +46,7 @@ export type ThreeDimensionalVizConfig = {
   modifiedNamespaceTopics: string[],
   pinTopics: boolean,
   savedPropsVersion?: ?number, // eslint-disable-line react/no-unused-prop-types
-  convexHullOpacity?: number,
+  topicDisplayMode?: TopicDisplayMode,
 
   // legacy props
   hideMap?: ?boolean, // eslint-disable-line react/no-unused-prop-types
@@ -56,14 +56,15 @@ export type ThreeDimensionalVizConfig = {
   selectedPolygonEditFormat?: "json" | "yaml",
   showCrosshair?: boolean,
 };
+export type Save3DConfig = SaveConfig<ThreeDimensionalVizConfig>;
 
 export type Props = {
   cleared?: boolean,
   config: ThreeDimensionalVizConfig,
   frame: Frame,
-  helpContent: React.Node | string,
-  saveConfig: SaveConfig<ThreeDimensionalVizConfig>,
-  setSubscriptions: (string[]) => void,
+  helpContent: Node | string,
+  saveConfig: Save3DConfig,
+  setSubscriptions: (subscriptions: string[]) => void,
   topics: Topic[],
   transforms: Transforms,
 };
@@ -80,20 +81,15 @@ const BaseRenderer = (props: Props, ref) => {
     config: {
       autoTextBackgroundColor,
       checkedNodes,
-      convexHullOpacity,
       expandedNodes,
-      flattenMarkers,
-      follow,
       followOrientation,
       followTf,
-      hideMap,
       modifiedNamespaceTopics,
       pinTopics,
-      savedPropsVersion,
       selectedPolygonEditFormat,
       showCrosshair,
+      topicDisplayMode,
       topicSettings,
-      useHeightMap,
     },
   } = props;
   const extensions = useSelector((state) => state.extensions);
@@ -105,29 +101,12 @@ const BaseRenderer = (props: Props, ref) => {
     useCallback(({ playerState: { activeData } }) => !!(activeData && activeData.isPlaying), [])
   );
 
-  const [selections, setSelections] = useState<Selections>(() => {
-    // build a copy of the tree to determine which topics are initially active
-    // subsequent updated will be done through Layout.js invoking `setSelections`
-    const root = treeBuilder({
-      checkedNodes,
-      expandedNodes: [],
-      modifiedNamespaceTopics: [],
-      namespaces: [],
-      topics,
-      transforms: transforms.values(),
-    });
-    return root.getSelections();
-  });
   const { cameraState, targetPose } = useComputedCameraState({
     currentCameraState: config.cameraState,
     followTf,
     followOrientation,
     transforms,
   });
-
-  // update subscriptions whenever selected topics change, use deep compare to prevent updating when expanding/collapsing topics
-  const memoizedSelectionTopics = useShallowMemo(selections.topics);
-  useEffect(() => setSubscriptions(memoizedSelectionTopics), [memoizedSelectionTopics, setSubscriptions]);
 
   // update open source checked nodes
   useLayoutEffect(
@@ -164,7 +143,12 @@ const BaseRenderer = (props: Props, ref) => {
         // When switching to follow orientation, adjust thetaOffset to preserve camera rotation.
         if (newFollowOrientation && !configFollowOrientation && targetPose) {
           const heading = cameraStateSelectors.targetHeading({ targetOrientation: targetPose.targetOrientation });
-          newCameraState.targetOffset = vec3.rotateZ([0, 0, 0], newCameraState.targetOffset, [0, 0, 0], heading);
+          newCameraState.targetOffset = vec3.rotateZ(
+            [0, 0, 0],
+            newCameraState.targetOffset || DEFAULT_CAMERA_STATE.targetOffset,
+            [0, 0, 0],
+            heading
+          );
           newCameraState.thetaOffset -= heading;
         }
         // When following a frame for the first time, snap to the origin.
@@ -177,8 +161,8 @@ const BaseRenderer = (props: Props, ref) => {
           newCameraState,
           getEquivalentOffsetsWithoutTarget(
             {
-              targetOffset: configCameraState.targetOffset || [0, 0, 0],
-              thetaOffset: configCameraState.thetaOffset,
+              targetOffset: configCameraState.targetOffset || DEFAULT_CAMERA_STATE.targetOffset,
+              thetaOffset: configCameraState.thetaOffset || DEFAULT_CAMERA_STATE.thetaOffset,
             },
             targetPose,
             configFollowOrientation
@@ -217,17 +201,13 @@ const BaseRenderer = (props: Props, ref) => {
       cameraState={cameraState}
       checkedNodes={checkedNodes}
       cleared={cleared}
-      convexHullOpacity={convexHullOpacity}
       currentTime={currentTime}
       expandedNodes={expandedNodes}
       extensions={extensions}
-      flattenMarkers={flattenMarkers}
-      follow={follow}
       followOrientation={!!followOrientation}
       followTf={followTf}
       frame={frame}
       helpContent={helpContent}
-      hideMap={hideMap}
       isPlaying={isPlaying}
       modifiedNamespaceTopics={modifiedNamespaceTopics}
       onAlignXYAxis={onAlignXYAxis}
@@ -235,15 +215,13 @@ const BaseRenderer = (props: Props, ref) => {
       onFollowChange={onFollowChange}
       pinTopics={pinTopics}
       saveConfig={saveConfig}
-      savedPropsVersion={savedPropsVersion}
       selectedPolygonEditFormat={selectedPolygonEditFormat || "yaml"}
-      selections={selections}
-      setSelections={setSelections}
       showCrosshair={!!showCrosshair}
+      topicDisplayMode={topicDisplayMode || TOPIC_DISPLAY_MODES.SHOW_TREE.value}
       topics={topics}
       topicSettings={topicSettings}
       transforms={transforms}
-      useHeightMap={useHeightMap}
+      setSubscriptions={setSubscriptions}
     />
   );
 };

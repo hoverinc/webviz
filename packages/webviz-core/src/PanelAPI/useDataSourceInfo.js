@@ -6,12 +6,10 @@
 //  found in the LICENSE file in the root directory of this source tree.
 //  You may not use this file except in compliance with the License.
 
-import { useMemo, useContext, useCallback } from "react";
+import { useCallback } from "react";
 import { type Time } from "rosbag";
 
 import { useMessagePipeline } from "webviz-core/src/components/MessagePipeline";
-import PanelContext from "webviz-core/src/components/PanelContext";
-import filterMap from "webviz-core/src/filterMap";
 import { type Topic } from "webviz-core/src/players/types";
 import type { RosDatatypes } from "webviz-core/src/types/RosDatatypes";
 
@@ -23,12 +21,12 @@ export type DataSourceInfo = {|
   capabilities: string[],
   startTime: ?Time,
   endTime: ?Time,
+  playerId: string,
 |};
 
 export default function useDataSourceInfo(): DataSourceInfo {
-  const { topicPrefix = "" } = useContext(PanelContext) || {};
   const datatypes = useMessagePipeline(useCallback(({ datatypes }) => datatypes, []));
-  const prefixedTopics = useMessagePipeline(useCallback(({ sortedTopics }) => sortedTopics, []));
+  const topics = useMessagePipeline(useCallback(({ sortedTopics }) => sortedTopics, []));
   const startTime = useMessagePipeline(
     useCallback(({ playerState: { activeData } }) => activeData && activeData.startTime, [])
   );
@@ -36,22 +34,14 @@ export default function useDataSourceInfo(): DataSourceInfo {
     useCallback(({ playerState: { activeData } }) => activeData && activeData.endTime, [])
   );
   const capabilities = useMessagePipeline(useCallback(({ playerState: { capabilities } }) => capabilities, []));
-
-  const unprefixedTopics = useMemo(
-    () =>
-      topicPrefix
-        ? filterMap(prefixedTopics, ({ name, datatype }) =>
-            name.startsWith(topicPrefix) ? { name: name.slice(topicPrefix.length), datatype } : null
-          )
-        : prefixedTopics,
-    [topicPrefix, prefixedTopics]
-  );
+  const playerId = useMessagePipeline(useCallback(({ playerState: { playerId } }) => playerId, []));
 
   return {
-    topics: unprefixedTopics,
+    topics,
     datatypes,
     capabilities,
     startTime,
     endTime,
+    playerId,
   };
 }

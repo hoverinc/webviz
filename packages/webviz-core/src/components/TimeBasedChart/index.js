@@ -18,6 +18,7 @@ import Button from "webviz-core/src/components/Button";
 import createSyncingComponent from "webviz-core/src/components/createSyncingComponent";
 import type { MessageHistoryItem } from "webviz-core/src/components/MessageHistory";
 import TimeBasedChartLegend from "webviz-core/src/components/TimeBasedChart/TimeBasedChartLegend";
+import Tooltip from "webviz-core/src/components/Tooltip";
 import Y_AXIS_ID from "webviz-core/src/panels/Plot/PlotChart";
 import mixins from "webviz-core/src/styles/mixins.module.scss";
 
@@ -70,6 +71,19 @@ const SLegend = styled.div`
   justify-content: start;
   padding: 30px 0px 10px 0px;
 `;
+
+const MemoizedTooltips = React.memo<{}>(function Tooltips() {
+  return (
+    <React.Fragment>
+      <Tooltip contents={<div>Hold v to only scroll vertically</div>} delay={0}>
+        <div style={{ position: "absolute", left: 0, top: 0, width: 30, bottom: 0 }} />
+      </Tooltip>
+      <Tooltip placement="top" contents={<div>Hold h to only scroll horizontally</div>} delay={0}>
+        <div style={{ position: "absolute", left: 0, right: 0, height: 30, bottom: 0 }} />
+      </Tooltip>
+    </React.Fragment>
+  );
+});
 
 type Props = {|
   type: "scatter" | "multicolorLine",
@@ -244,7 +258,6 @@ export default class TimeBasedChart extends React.PureComponent<Props, State> {
       this._tooltip = document.createElement("div");
       chartInstance.canvas.parentNode.appendChild(this._tooltip);
     }
-
     if (this._tooltip) {
       ReactDOM.render(
         <TimeBasedChartTooltip
@@ -349,26 +362,31 @@ export default class TimeBasedChart extends React.PureComponent<Props, State> {
               },
             }))
           : [defaultXAxis],
-        yAxes: yAxes.map((yAxis) => ({
-          ...yAxis,
-          afterUpdate: this._onPlotChartUpdate,
-          ticks:
-            userMinY !== null && userMaxY !== null && (yAxis.ticks.min == null && yAxis.ticks.max == null)
-              ? {
-                  ...defaultYTicksSettings,
-                  ...yAxis.ticks,
-                  min: userMinY,
-                  max: userMaxY,
-                  callback: (...args) =>
-                    yAxis.ticks.callback ? yAxis.ticks.callback(...args) : this._onGetTick(...args),
-                }
-              : {
-                  ...defaultYTicksSettings,
-                  ...yAxis.ticks,
-                  callback: (...args) =>
-                    yAxis.ticks.callback ? yAxis.ticks.callback(...args) : this._onGetTick(...args),
-                },
-        })),
+        yAxes: yAxes.map((yAxis) => {
+          const ticks = {
+            ...defaultYTicksSettings,
+            ...yAxis.ticks,
+            callback: (...args) => (yAxis.ticks.callback ? yAxis.ticks.callback(...args) : this._onGetTick(...args)),
+          };
+          // If the user is manually panning or zooming, don't constrain the y-axis
+          if (this.state.showResetZoom) {
+            delete ticks.min;
+            delete ticks.max;
+          } else {
+            if (userMinY != null) {
+              ticks.min = userMinY;
+            }
+            if (userMaxY != null) {
+              ticks.max = userMaxY;
+            }
+          }
+
+          return {
+            ...yAxis,
+            afterUpdate: this._onPlotChartUpdate,
+            ticks,
+          };
+        }),
       },
       onClick: this.props.onClick,
       pan: {
@@ -454,6 +472,7 @@ export default class TimeBasedChart extends React.PureComponent<Props, State> {
             />
           </SRoot>
         </div>
+        <MemoizedTooltips />
         {drawLegend && (
           <SLegend>
             <TimeBasedChartLegend

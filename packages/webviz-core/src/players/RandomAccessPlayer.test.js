@@ -6,97 +6,24 @@
 //  found in the LICENSE file in the root directory of this source tree.
 //  You may not use this file except in compliance with the License.
 
-//  Copyright (c) 2018-present, GM Cruise LLC
-//
-//  This source code is licensed under the Apache License, Version 2.0,
-//  found in the LICENSE file in the root directory of this source tree.
-//  You may not use this file except in compliance with the License.
-
 import { omit } from "lodash";
 import { TimeUtil, type Time } from "rosbag";
 
-import RandomAccessPlayer, { SEEK_BACK_NANOSECONDS, AUTOPLAY_START_DELAY_MS } from "./RandomAccessPlayer";
+import RandomAccessPlayer, { SEEK_BACK_NANOSECONDS, SEEK_ON_START_NS, SEEK_START_DELAY_MS } from "./RandomAccessPlayer";
+import TestProvider from "./TestProvider";
 import delay from "webviz-core/shared/delay";
-import {
-  type ExtensionPoint,
-  type InitializationResult,
-  type DataProviderMessage,
-  type DataProvider,
-} from "webviz-core/src/dataProviders/types";
-import NoopMetricsCollector from "webviz-core/src/players/NoopMetricsCollector";
+import signal from "webviz-core/shared/signal";
+import { type DataProviderMessage } from "webviz-core/src/dataProviders/types";
 import {
   type PlayerMetricsCollectorInterface,
-  type Topic,
   type PlayerState,
   PlayerCapabilities,
 } from "webviz-core/src/players/types";
-import type { RosDatatypes } from "webviz-core/src/types/RosDatatypes";
-import signal from "webviz-core/src/util/signal";
+import reportError from "webviz-core/src/util/reportError";
+import { fromNanoSec } from "webviz-core/src/util/time";
 
-jest.mock("webviz-core/src/util/reportError");
-
-type GetMessages = (start: Time, end: Time, topics: string[]) => Promise<DataProviderMessage[]>;
-
-const start = { sec: 0, nsec: 0 };
-const end = { sec: 100, nsec: 0 };
-const datatypes: RosDatatypes = {
-  fooBar: [
-    {
-      name: "val",
-      type: "number",
-    },
-  ],
-  baz: [
-    {
-      name: "val",
-      type: "number",
-    },
-  ],
-};
-const topics: Topic[] = [
-  {
-    name: "/foo/bar",
-    datatype: "fooBar",
-  },
-  {
-    name: "/baz",
-    datatype: "baz",
-  },
-];
-class TestProvider implements DataProvider {
-  _start: Time;
-  _end: Time;
-  _topics: Topic[];
-  _datatypes: RosDatatypes;
-  extensionPoint: ExtensionPoint;
-  closed: boolean = false;
-
-  constructor() {
-    this._start = start;
-    this._end = end;
-    this._topics = topics;
-    this._datatypes = datatypes;
-  }
-
-  initialize(extensionPoint: ExtensionPoint): Promise<InitializationResult> {
-    this.extensionPoint = extensionPoint;
-    return Promise.resolve({
-      start: this._start,
-      end: this._end,
-      topics: this._topics,
-      datatypes: this._datatypes,
-    });
-  }
-
-  getMessages: GetMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
-    throw new Error("not implemented");
-  };
-
-  close(): Promise<void> {
-    this.closed = true;
-    return Promise.resolve();
-  }
-}
+// By default seek to the start of the bag, since that makes things a bit simpler to reason about.
+const playerOptions = { metricsCollector: undefined, seekToTime: { sec: 0, nsec: 0 } };
 
 class MessageStore {
   _messages: PlayerState[] = [];
@@ -139,13 +66,13 @@ describe("RandomAccessPlayer", () => {
   });
   afterEach(async () => {
     mockDateNow.mockRestore();
-    // Always wait to start autoplay to ensure that errors are contained to their own tests.
-    await delay(AUTOPLAY_START_DELAY_MS + 10);
+    // Always wait to ensure that errors are contained to their own tests.
+    await delay(SEEK_START_DELAY_MS + 10);
   });
 
   it("calls listener with player initial player state and data types", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     const store = new MessageStore(2);
     await source.setListener(store.add);
     const messages = await store.done;
@@ -183,9 +110,23 @@ describe("RandomAccessPlayer", () => {
     source.close();
   });
 
+  it("without a specified seekToTime it seeks into the bag by a bit, so that there's something useful on the screen", async () => {
+    const provider = new TestProvider();
+    const source = new RandomAccessPlayer(
+      { name: "TestProvider", args: { provider }, children: [] },
+      { ...playerOptions, seekToTime: undefined }
+    );
+    const store = new MessageStore(2);
+    await source.setListener(store.add);
+    const messages: any = await store.done;
+    expect(messages[1].activeData.currentTime).toEqual(fromNanoSec(SEEK_ON_START_NS));
+
+    source.close();
+  });
+
   it("calls listener with player state changes on play/pause", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     const store = new MessageStore(2);
     await source.setListener(store.add);
     // make getMessages do nothing since we're going to start reading
@@ -207,7 +148,7 @@ describe("RandomAccessPlayer", () => {
 
   it("calls listener with speed changes", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     const store = new MessageStore(2);
     await source.setListener(store.add);
     // allow initialization messages to come in
@@ -227,7 +168,7 @@ describe("RandomAccessPlayer", () => {
   });
 
   it("reads messages when playing back", async () => {
-    expect.assertions(6);
+    expect.assertions(7);
     const provider = new TestProvider();
     let callCount = 0;
     provider.getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
@@ -253,13 +194,18 @@ describe("RandomAccessPlayer", () => {
           return Promise.resolve(result);
         }
 
+        case 3: {
+          expect(start).toEqual({ sec: 0, nsec: 4000001 });
+          return Promise.resolve([]);
+        }
+
         default:
           throw new Error("getMessages called too many times");
       }
     };
 
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
-    const store = new MessageStore(6);
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
+    const store = new MessageStore(5);
     await source.setListener(store.add);
 
     source.setSubscriptions([{ topic: "/foo/bar" }]);
@@ -270,7 +216,6 @@ describe("RandomAccessPlayer", () => {
 
     const messagePayloads = messages.map((msg) => (msg.activeData || {}).messages || []);
     expect(messagePayloads).toEqual([
-      [],
       [],
       [],
       [],
@@ -289,7 +234,7 @@ describe("RandomAccessPlayer", () => {
 
   it("still moves forward time if there are no messages", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
 
     let callCount = 0;
     provider.getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
@@ -303,8 +248,8 @@ describe("RandomAccessPlayer", () => {
           return Promise.resolve([]);
 
         case 2:
-          expect(start).toEqual({ sec: 0, nsec: 2 });
-          expect(end).toEqual({ sec: 0, nsec: 4000001 });
+          expect(start).toEqual({ sec: 0, nsec: 1 });
+          expect(end).toEqual({ sec: 0, nsec: 4000000 });
           expect(topics).toEqual(["/foo/bar"]);
           source.pausePlayback();
           return Promise.resolve([]);
@@ -314,7 +259,7 @@ describe("RandomAccessPlayer", () => {
       }
     };
 
-    const store = new MessageStore(5);
+    const store = new MessageStore(4);
     await source.setListener(store.add);
     source.setSubscriptions([{ topic: "/foo/bar" }]);
     source.startPlayback();
@@ -322,12 +267,12 @@ describe("RandomAccessPlayer", () => {
     // close the player to stop more reads
     source.close();
     const messagePayloads = messages.map((msg) => (msg.activeData || {}).messages || []);
-    expect(messagePayloads).toEqual([[], [], [], [], []]);
+    expect(messagePayloads).toEqual([[], [], [], []]);
   });
 
   it("pauses and does not emit messages after pause", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
 
     let callCount = 0;
     provider.getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
@@ -369,7 +314,7 @@ describe("RandomAccessPlayer", () => {
       }
     };
 
-    const store = new MessageStore(6);
+    const store = new MessageStore(5);
     await source.setListener(store.add);
     source.setSubscriptions([{ topic: "/foo/bar" }]);
 
@@ -377,7 +322,6 @@ describe("RandomAccessPlayer", () => {
     const messages = await store.done;
     const messagePayloads = messages.map((msg) => (msg.activeData || {}).messages || []);
     expect(messagePayloads).toEqual([
-      [],
       [],
       [],
       [],
@@ -398,7 +342,7 @@ describe("RandomAccessPlayer", () => {
 
   it("seek during reading discards messages before seek", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     let callCount = 0;
     provider.getMessages = async (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
       expect(topics).toContainOnly(["/foo/bar"]);
@@ -442,30 +386,28 @@ describe("RandomAccessPlayer", () => {
       }
     };
 
-    const store = new MessageStore(6);
+    const store = new MessageStore(4);
     await source.setListener(store.add);
     source.setSubscriptions([{ topic: "/foo/bar" }]);
     source.startPlayback();
 
     const messages = await store.done;
-    expect(messages).toHaveLength(6);
+    expect(messages).toHaveLength(4);
     const activeDatas = messages.map((msg) => msg.activeData || {});
     expect(activeDatas.map((d) => d.currentTime)).toEqual([
       undefined, // "start up" message
       { sec: 0, nsec: 0 },
       { sec: 0, nsec: 0 },
       { sec: 0, nsec: 0 },
-      { sec: 0, nsec: 0 },
-      { sec: 0, nsec: 0 },
     ]);
-    expect(activeDatas.map((d) => d.messages)).toEqual([undefined, [], [], [], [], []]);
+    expect(activeDatas.map((d) => d.messages)).toEqual([undefined, [], [], []]);
 
     source.close();
   });
 
   it("backfills previous messages on seek", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     let callCount = 0;
     provider.getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
       callCount++;
@@ -504,17 +446,15 @@ describe("RandomAccessPlayer", () => {
       }
     };
 
-    const store = new MessageStore(4);
+    const store = new MessageStore(2);
     source.setListener(store.add);
     const done = await store.done;
     expect(done).toEqual([
       expect.objectContaining({ activeData: undefined }),
       expect.objectContaining({ activeData: expect.any(Object) }),
-      expect.objectContaining({ activeData: expect.any(Object) }),
-      expect.objectContaining({ activeData: expect.any(Object) }),
     ]);
 
-    store.reset(3);
+    store.reset(1);
     source.setSubscriptions([{ topic: "/foo/bar" }]);
     // ensure results from the automatic backfill during setSubscriptions are always thrown away
     // after the new seek, by making the lastSeekTime change
@@ -523,8 +463,6 @@ describe("RandomAccessPlayer", () => {
 
     const messages = await store.done;
     expect(messages.map((msg) => (msg.activeData ? msg.activeData.messages : []))).toEqual([
-      [],
-      [],
       [
         {
           op: "message",
@@ -557,7 +495,7 @@ describe("RandomAccessPlayer", () => {
 
   it("discards backfilled messages if we started playing after the seek", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     let callCount = 0;
     let backfillPromiseCallback;
     provider.getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
@@ -599,23 +537,21 @@ describe("RandomAccessPlayer", () => {
       expect.objectContaining({ activeData: expect.any(Object) }),
     ]);
 
-    store.reset(5);
+    store.reset(3);
     source.setSubscriptions([{ topic: "/foo/bar" }]);
     // ensure results from the automatic backfill during setSubscriptions are always thrown away
     // after the new seek, by making the lastSeekTime change
     mockDateNow.mockReturnValue(Date.now() + 1);
     source.seekPlayback({ sec: 20, nsec: 50 });
 
-    await delay(10);
+    await delay(100);
     if (!backfillPromiseCallback) {
       throw new Error("backfillPromiseCallback should be set");
     }
     source.startPlayback();
     const messages = await store.done;
     expect(messages.map((msg) => (msg.activeData || {}).messages)).toEqual([
-      [], // seek from setSubscriptions
-      [], // seekPlayback
-      [], // startPlayback
+      [],
       [
         {
           topic: "/foo/bar",
@@ -642,10 +578,10 @@ describe("RandomAccessPlayer", () => {
 
   it("clamps times passed to the DataProvider", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     source.setSubscriptions([{ topic: "/foo/bar" }]);
     let lastGetMessagesCall;
-    const getMessages: GetMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
+    const getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
       return new Promise((resolve) => {
         lastGetMessagesCall = { start, end, topics, resolve };
       });
@@ -686,7 +622,7 @@ describe("RandomAccessPlayer", () => {
   it("gets messages when valid topics subscriptions changed", async () => {
     expect.assertions(4);
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
 
     let callCount = 0;
     provider.getMessages = (start: Time, end: Time, topics: string[]): Promise<DataProviderMessage[]> => {
@@ -763,7 +699,7 @@ describe("RandomAccessPlayer", () => {
       return Promise.resolve([next]);
     };
 
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     const received = [];
     await source.setListener((msg) => {
       received.push(...((msg.activeData || {}).messages || []));
@@ -809,7 +745,7 @@ describe("RandomAccessPlayer", () => {
 
   it("closes provider when closed", async () => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     await source.setListener(async () => {});
     await source.close();
     expect(provider.closed).toBe(true);
@@ -822,7 +758,7 @@ describe("RandomAccessPlayer", () => {
       }
     }
     const provider = new FailTestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
 
     const store = new MessageStore(2);
     await source.setListener(store.add);
@@ -836,11 +772,14 @@ describe("RandomAccessPlayer", () => {
       expect.objectContaining({ showInitializing: true, activeData: undefined }),
       expect.objectContaining({ showInitializing: false, activeData: undefined }),
     ]);
+    expect(reportError).toHaveBeenCalledWith("Error initializing player", expect.any(Error), "app");
+    // $FlowFixMe
+    reportError.mockClear();
   });
 
   it("shows a spinner when a provider is reconnecting", (done) => {
     const provider = new TestProvider();
-    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     source.setListener((state) => {
       if (!state.showInitializing) {
         if (!state.showSpinner) {
@@ -871,7 +810,7 @@ describe("RandomAccessPlayer", () => {
       message: { payload: "foo bar 2" },
     };
 
-    const player = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const player = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     player.setSubscriptions([{ topic: "/foo/bar" }]);
 
     const firstGetMessagesCall = signal();
@@ -886,7 +825,7 @@ describe("RandomAccessPlayer", () => {
       return Promise.resolve(messages1.splice(0, 1));
     });
 
-    const store = new MessageStore(3);
+    const store = new MessageStore(2);
     await player.setListener(store.add);
     player.startPlayback();
 
@@ -895,7 +834,6 @@ describe("RandomAccessPlayer", () => {
 
     expect(await store.done).toEqual([
       expect.objectContaining({ activeData: undefined }),
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
       expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: true, messages: [] }) }),
     ]);
 
@@ -988,9 +926,12 @@ describe("RandomAccessPlayer", () => {
       const provider = new TestProvider();
       provider.getMessages = () => Promise.resolve([]);
 
-      const collector = new TestMetricsCollector();
-      const source = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, collector);
-      expect(collector.stats()).toEqual({
+      const metricsCollector = new TestMetricsCollector();
+      const source = new RandomAccessPlayer(
+        { name: "TestProvider", args: { provider }, children: [] },
+        { ...playerOptions, metricsCollector }
+      );
+      expect(metricsCollector.stats()).toEqual({
         initialized: 0,
         played: 0,
         paused: 0,
@@ -1014,7 +955,7 @@ describe("RandomAccessPlayer", () => {
         throw new Error("listener wasn't called");
       }
       await Promise.resolve();
-      expect(collector.stats()).toEqual({
+      expect(metricsCollector.stats()).toEqual({
         initialized: 1,
         played: 0,
         paused: 0,
@@ -1023,7 +964,7 @@ describe("RandomAccessPlayer", () => {
       });
       resolveListener();
       await Promise.resolve();
-      expect(collector.stats()).toEqual({
+      expect(metricsCollector.stats()).toEqual({
         initialized: 1,
         played: 0,
         paused: 0,
@@ -1033,7 +974,7 @@ describe("RandomAccessPlayer", () => {
 
       source.startPlayback();
       source.startPlayback();
-      expect(collector.stats()).toEqual({
+      expect(metricsCollector.stats()).toEqual({
         initialized: 1,
         played: 1,
         paused: 0,
@@ -1042,7 +983,7 @@ describe("RandomAccessPlayer", () => {
       });
       source.seekPlayback({ sec: 0, nsec: 500 });
       source.seekPlayback({ sec: 1, nsec: 0 });
-      expect(collector.stats()).toEqual({
+      expect(metricsCollector.stats()).toEqual({
         initialized: 1,
         played: 1,
         paused: 0,
@@ -1051,7 +992,7 @@ describe("RandomAccessPlayer", () => {
       });
       source.pausePlayback();
       source.pausePlayback();
-      expect(collector.stats()).toEqual({
+      expect(metricsCollector.stats()).toEqual({
         initialized: 1,
         played: 1,
         paused: 1,
@@ -1060,7 +1001,7 @@ describe("RandomAccessPlayer", () => {
       });
       source.setPlaybackSpeed(0.5);
       source.setPlaybackSpeed(1);
-      expect(collector.stats()).toEqual({
+      expect(metricsCollector.stats()).toEqual({
         initialized: 1,
         played: 1,
         paused: 1,
@@ -1081,7 +1022,7 @@ describe("RandomAccessPlayer", () => {
       message: { payload: "foo bar 1" },
     };
 
-    const player = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const player = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     player.setSubscriptions([{ topic: "/foo/bar" }]);
 
     const firstGetMessagesCall = signal();
@@ -1094,7 +1035,7 @@ describe("RandomAccessPlayer", () => {
       return Promise.resolve(messages1.splice(0, 1));
     });
 
-    const store = new MessageStore(4);
+    const store = new MessageStore(3);
     await player.setListener(store.add);
     player.startPlayback();
 
@@ -1109,7 +1050,6 @@ describe("RandomAccessPlayer", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     expect(await store.done).toEqual([
       expect.objectContaining({ activeData: undefined }),
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
       expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: true, messages: [] }) }),
       expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
     ]);
@@ -1130,10 +1070,10 @@ describe("RandomAccessPlayer", () => {
     player.close();
   });
 
-  it("When autoplay is off, seeks the player after starting", async () => {
+  it("seeks the player after starting", async () => {
     const provider = new TestProvider();
     provider.getMessages = jest.fn().mockImplementation(async () => Promise.resolve([]));
-    const player = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] });
+    const player = new RandomAccessPlayer({ name: "TestProvider", args: { provider }, children: [] }, playerOptions);
     const store = new MessageStore(2);
     player.setSubscriptions([{ topic: "/foo/bar" }]);
     await player.setListener(store.add);
@@ -1143,56 +1083,8 @@ describe("RandomAccessPlayer", () => {
       // isPlaying is set to false to begin
       expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
     ]);
-    store.reset(2);
-    // Even after enough time to start callback
-    await delay(AUTOPLAY_START_DELAY_MS + 10);
-    const secondMessages = await store.done;
-    expect(secondMessages).toEqual([
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
-    ]);
     expect(provider.getMessages).toHaveBeenCalled();
 
     player.close();
-  });
-
-  it("When the tab starts hidden with autoplay, seeks the player", async () => {
-    // $FlowFixMe
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => "hidden",
-    });
-    const provider = new TestProvider();
-    provider.getMessages = jest.fn().mockImplementation(async () => Promise.resolve([]));
-    const player = new RandomAccessPlayer(
-      { name: "TestProvider", args: { provider }, children: [] },
-      new NoopMetricsCollector(),
-      { autoplay: true, seekToTime: null }
-    );
-    const store = new MessageStore(2);
-    player.setSubscriptions([{ topic: "/foo/bar" }]);
-    await player.setListener(store.add);
-    const firstMessages = await store.done;
-    expect(firstMessages).toEqual([
-      expect.objectContaining({ activeData: undefined }),
-      // isPlaying is set to false to begin
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
-    ]);
-    store.reset(2);
-    // Even after enough time to start callback
-    await delay(AUTOPLAY_START_DELAY_MS + 10);
-    const secondMessages = await store.done;
-    expect(secondMessages).toEqual([
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
-      expect.objectContaining({ activeData: expect.objectContaining({ isPlaying: false, messages: [] }) }),
-    ]);
-    expect(provider.getMessages).toHaveBeenCalled();
-
-    player.close();
-    // $FlowFixMe
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      get: () => "visible",
-    });
   });
 });

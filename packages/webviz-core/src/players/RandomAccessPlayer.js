@@ -9,6 +9,7 @@ import { isEqual } from "lodash";
 import { TimeUtil, type Time } from "rosbag";
 import uuid from "uuid";
 
+import { MEM_CACHE_BLOCK_SIZE_NS } from "webviz-core/src/dataProviders/MemoryCacheDataProvider";
 import { rootGetDataProvider } from "webviz-core/src/dataProviders/rootGetDataProvider";
 import {
   type DataProvider,
@@ -23,7 +24,6 @@ import {
   type Player,
   PlayerCapabilities,
   type PlayerMetricsCollectorInterface,
-  type PlayerOptions,
   type PlayerState,
   type Progress,
   type PublishPayload,
@@ -35,20 +35,44 @@ import type { RosDatatypes } from "webviz-core/src/types/RosDatatypes";
 import debouncePromise from "webviz-core/src/util/debouncePromise";
 import reportError, { type ErrorType } from "webviz-core/src/util/reportError";
 import { getSanitizedTopics } from "webviz-core/src/util/selectors";
-import { clampTime, toSec, fromMillis, subtractTimes } from "webviz-core/src/util/time";
+import { clampTime, fromMillis, fromNanoSec, subtractTimes, toSec } from "webviz-core/src/util/time";
 
 const LOOP_MIN_BAG_TIME_IN_SEC = 1;
 
 const delay = (time) => new Promise((resolve) => setTimeout(resolve, time));
 
 // The number of nanoseconds to seek backwards to build context during a seek
-// operation larger values mean more oportunity to capture context before the
-// seek event, but are slower operations. We've chosen 99ms since our internal tool (Tableflow)
-// publishes at 10hz, and we do NOT want to pull in a range of messages that
-// exceeds that frequency.
-export const SEEK_BACK_NANOSECONDS = 99 /* ms */ * 1000 * 1000;
+// operation larger values mean more opportunity to capture context before the
+// seek event, but are slower operations. We shouldn't make this number too big,
+// otherwise we pull in too many unnecessary messages, making seeking slow. But
+// we also don't want it to be too low, otherwise you don't see enough data when
+// seeking.
+// Unfortunately right now we need a pretty high number here, especially when
+// using "synchronized topics" (e.g. in the Image panel) when one of the topics
+// is publishing at a fairly low rate.
+// TODO(JP): Add support for subscribers to express that we're only interested
+// in the last message on a topic, and then support that in `getMessages` as
+// well, so we can fetch pretty old messages without incurring the cost of
+// fetching too many.
+export const SEEK_BACK_NANOSECONDS = 299 /* ms */ * 1e6;
 
-export const AUTOPLAY_START_DELAY_MS = 100;
+// Amount to seek into the bag from the start when loading the player, to show
+// something useful on the screen. Ideally this is less than BLOCK_SIZE_NS from
+// MemoryCacheDataProvider so we still stay within the first block when fetching
+// initial data.
+export const SEEK_ON_START_NS = 99 /* ms */ * 1e6;
+if (SEEK_ON_START_NS >= MEM_CACHE_BLOCK_SIZE_NS) {
+  throw new Error(
+    "SEEK_ON_START_NS should be less than MEM_CACHE_BLOCK_SIZE_NS (to keep initial backfill within one block)"
+  );
+}
+if (SEEK_ON_START_NS >= SEEK_BACK_NANOSECONDS) {
+  throw new Error(
+    "SEEK_ON_START_NS should be less than SEEK_BACK_NANOSECONDS (otherwise we skip over messages at the start)"
+  );
+}
+
+export const SEEK_START_DELAY_MS = 100;
 
 const capabilities = [PlayerCapabilities.setSpeed];
 
@@ -72,7 +96,6 @@ export default class RandomAccessPlayer implements Player {
   _providerTopics: Topic[] = [];
   _providerDatatypes: RosDatatypes = {};
   _metricsCollector: PlayerMetricsCollectorInterface;
-  _playerOptions: PlayerOptions;
   _initializing: boolean = true;
   _initialized: boolean = false;
   _reconnecting: boolean = false;
@@ -81,20 +104,20 @@ export default class RandomAccessPlayer implements Player {
   _messages: Message[] = [];
   _hasError = false;
   _closed = false;
+  _seekToTime: ?Time;
+  _lastRangeMillis: ?number;
 
   constructor(
     providerDescriptor: DataProviderDescriptor,
-    metricsCollector: PlayerMetricsCollectorInterface = new NoopMetricsCollector(),
-    playerOptions: ?PlayerOptions
+    { metricsCollector, seekToTime }: { metricsCollector: ?PlayerMetricsCollectorInterface, seekToTime: ?Time }
   ) {
     if (process.env.NODE_ENV === "test" && providerDescriptor.name === "TestProvider") {
       this._provider = providerDescriptor.args.provider;
     } else {
       this._provider = rootGetDataProvider(providerDescriptor);
     }
-    this._metricsCollector = metricsCollector;
-
-    this._playerOptions = playerOptions || { autoplay: false, seekToTime: null };
+    this._metricsCollector = metricsCollector || new NoopMetricsCollector();
+    this._seekToTime = seekToTime;
 
     document.addEventListener("visibilitychange", this._handleDocumentVisibilityChange, false);
   }
@@ -149,57 +172,38 @@ export default class RandomAccessPlayer implements Player {
           throw new Error("Use ParseMessagesDataProvider to parse raw messages");
         }
 
+        const initialTime = clampTime(
+          this._seekToTime || TimeUtil.add(start, fromNanoSec(SEEK_ON_START_NS)),
+          start,
+          end
+        );
+
         this._start = start;
-        this._currentTime = this._playerOptions.seekToTime || start;
+        this._currentTime = initialTime;
         this._end = end;
         this._providerTopics = topics;
         this._providerDatatypes = datatypes;
         this._initializing = false;
-
-        if (this._playerOptions.seekToTime && !this._playerOptions.autoplay) {
-          this.seekPlayback(this._currentTime);
-        } else {
-          this._emitState();
-        }
+        this._reportInitialized();
 
         // Wait a bit until panels have had the chance to subscribe to topics before we start
         // playback.
-        // TODO(JP).
         setTimeout(() => {
           if (this._closed) {
             return;
           }
-
-          // If the autoplay is enabled, either start playback or, if this tab is not currently selected, start data
-          // loading.
-          if (this._playerOptions.autoplay) {
-            if (document.visibilityState === "visible") {
-              this.startPlayback();
-            } else {
-              this._wasPlayingBeforeTabSwitch = true;
-              // call seekPlayback so that we start data loading.
-              this.seekPlayback(this._currentTime);
-            }
-          } else {
-            // If autoplay is not enabled, still call seekPlayback so that we start data loading.
-            this.seekPlayback(this._currentTime);
+          // Only do the initial seek if we haven't started playing already.
+          if (!this._isPlaying && TimeUtil.areSame(this._currentTime, initialTime)) {
+            this.seekPlayback(initialTime);
           }
-        }, AUTOPLAY_START_DELAY_MS);
+        }, SEEK_START_DELAY_MS);
       })
       .catch((error: Error) => {
         this._setError("Error initializing player", error, "app");
       });
   }
 
-  _emitState() {
-    // reportInitialized needs to be outside of the debounced function, because we don't want
-    // the listener's callback (which may be waiting on a requestAnimationFrame) to block us from
-    // measuring when initialization finished.
-    this._reportInitialized();
-    return this._emitStateDebounced();
-  }
-
-  _emitStateDebounced = debouncePromise(() => {
+  _emitState = debouncePromise(() => {
     if (!this._listener) {
       return Promise.resolve();
     }
@@ -257,11 +261,14 @@ export default class RandomAccessPlayer implements Player {
     const durationMillis = this._lastTickMillis ? tickTime - this._lastTickMillis : 20;
     this._lastTickMillis = tickTime;
 
-    // Read at most 80 ms * speed messages. Without this,
-    // if the UI lags substantially due to GC and the delay between reads is high
-    // it can result in reading a very large chunk of messages which introduces
-    // even _more_ delay before the next read loop triggers, causing serious cascading UI jank.
-    const rangeMillis = Math.min(durationMillis, 80) * this._speed;
+    // Read at most 300ms worth of messages, otherwise things can get out of control if rendering
+    // is very slow. Also, smooth over the range that we request, so that a single slow frame won't
+    // cause the next frame to also be unnecessarily slow by increasing the frame size.
+    let rangeMillis = Math.min(durationMillis * this._speed, 300);
+    if (this._lastRangeMillis != null) {
+      rangeMillis = this._lastRangeMillis * 0.9 + rangeMillis * 0.1;
+    }
+    this._lastRangeMillis = rangeMillis;
 
     // loop to the beginning if we pass the end of the playback range
     if (isEqual(this._currentTime, this._end)) {
@@ -288,7 +295,7 @@ export default class RandomAccessPlayer implements Player {
     const start: Time = clampTime(TimeUtil.add(this._currentTime, { sec: 0, nsec: 1 }), this._start, this._end);
     const end: Time = clampTime(TimeUtil.add(this._currentTime, fromMillis(rangeMillis)), this._start, this._end);
     const messages = await this._getMessages(start, end);
-    await this._emitStateDebounced.currentPromise;
+    await this._emitState.currentPromise;
 
     // if we seeked while reading the do not emit messages
     // just start reading again from the new seek position
@@ -398,6 +405,7 @@ export default class RandomAccessPlayer implements Player {
   }
 
   setPlaybackSpeed(speed: number): void {
+    delete this._lastRangeMillis;
     this._speed = speed;
     this._metricsCollector.setSpeed(speed);
     this._emitState();
@@ -407,14 +415,8 @@ export default class RandomAccessPlayer implements Player {
     if (this._initializing || this._initialized) {
       return;
     }
-
-    if (
-      !this._progress.percentageByTopic ||
-      Object.values(this._progress.percentageByTopic).every((percentage) => Number(percentage) >= 100)
-    ) {
-      this._metricsCollector.initialized();
-      this._initialized = true;
-    }
+    this._metricsCollector.initialized();
+    this._initialized = true;
   }
 
   _setCurrentTime(time: Time): void {
@@ -429,11 +431,13 @@ export default class RandomAccessPlayer implements Player {
     const seekTime = Date.now();
     this._lastSeekTime = seekTime;
     this._cancelSeekBackfill = false;
+    // cancel any queued _emitState that might later emit messages from before we seeked
+    this._messages = [];
 
-    // do not _emitState if subscriptions have changed, but time has not
-    if (isEqual(this._currentTime, time)) {
-      this._emitState();
-    }
+    // No need to emit state here. Either we are playing, in which case we'll emit state soon
+    // anyway, or we're not, in which case we'll go down the `if` below and emit state when that
+    // `getMessages` call finishes. This prevents flickering in the UI when seeking, since we don't
+    // clear out panels until we actually receive new data.
 
     if (!this._isPlaying) {
       this._getMessages(
@@ -479,7 +483,7 @@ export default class RandomAccessPlayer implements Player {
   close() {
     this._isPlaying = false;
     this._closed = true;
-    if (!this._initializing) {
+    if (!this._initializing && !this._hasError) {
       this._provider.close();
     }
     this._metricsCollector.close();

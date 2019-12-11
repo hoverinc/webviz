@@ -11,7 +11,6 @@ import * as React from "react";
 
 import * as PanelAPI from ".";
 import { MockMessagePipelineProvider } from "webviz-core/src/components/MessagePipeline";
-import { MockPanelContextProvider } from "webviz-core/src/components/Panel";
 
 describe("useDataSourceInfo", () => {
   const topics = [{ name: "/foo", datatype: "Foo" }];
@@ -65,6 +64,7 @@ describe("useDataSourceInfo", () => {
           capabilities: ["hello"],
           startTime: { sec: 0, nsec: 1 },
           endTime: { sec: 10, nsec: 0 },
+          playerId: "1",
         },
       ],
     ]);
@@ -92,6 +92,7 @@ describe("useDataSourceInfo", () => {
           capabilities: ["hello"],
           startTime: { sec: 0, nsec: 1 },
           endTime: { sec: 10, nsec: 0 },
+          playerId: "1",
         },
       ],
     ]);
@@ -109,41 +110,11 @@ describe("useDataSourceInfo", () => {
           capabilities: ["hello"],
           startTime: { sec: 0, nsec: 1 },
           endTime: { sec: 10, nsec: 0 },
+          playerId: "1",
         },
       ],
     ]);
 
-    root.unmount();
-  });
-
-  it("removes PanelContext.topicPrefix from topics", () => {
-    const Test = createTest();
-    const root = mount(
-      <MockPanelContextProvider topicPrefix={"/foo"}>
-        <MockMessagePipelineProvider
-          topics={[
-            { name: "/foo/abc", datatype: "FooAbc" },
-            { name: "/foo123", datatype: "Foo123" },
-            { name: "/bar/xyz", datatype: "BarXyz" },
-          ]}>
-          <Test />
-        </MockMessagePipelineProvider>
-      </MockPanelContextProvider>
-    );
-    expect(Test.renderFn.mock.calls).toEqual([
-      [
-        {
-          topics: [
-            { name: "123", datatype: "Foo123" }, // FIXME: prefixes probably shouldn't be stripped this way
-            { name: "/abc", datatype: "FooAbc" },
-          ],
-          datatypes: {},
-          capabilities: [],
-          startTime: { sec: 100, nsec: 0 },
-          endTime: { sec: 100, nsec: 0 },
-        },
-      ],
-    ]);
     root.unmount();
   });
 });

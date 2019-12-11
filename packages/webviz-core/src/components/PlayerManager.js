@@ -35,24 +35,30 @@ import type { ImportPanelLayoutPayload, UserNodes } from "webviz-core/src/types/
 import demoLayoutJson from "webviz-core/src/util/demoLayout.json";
 import {
   DEMO_QUERY_KEY,
-  ENABLE_NODE_PLAYGROUND_QUERY_KEY,
   LOAD_ENTIRE_BAG_QUERY_KEY,
   REMOTE_BAG_URL_QUERY_KEY,
   SECOND_BAG_PREFIX,
 } from "webviz-core/src/util/globalConstants";
 import { getSeekToTime } from "webviz-core/src/util/time";
 
+function getPlayerOptions() {
+  return { metricsCollector: undefined, seekToTime: getSeekToTime() };
+}
+
 function buildPlayer(files: File[]): ?Player {
   if (files.length === 0) {
     return undefined;
   } else if (files.length === 1) {
-    return new RandomAccessPlayer(getLocalBagDescriptor(files[0]), undefined);
+    return new RandomAccessPlayer(getLocalBagDescriptor(files[0]), getPlayerOptions());
   } else if (files.length === 2) {
-    return new RandomAccessPlayer({
-      name: "CombinedDataProvider",
-      args: { providerInfos: [{}, { prefix: SECOND_BAG_PREFIX }] },
-      children: [getLocalBagDescriptor(files[0]), getLocalBagDescriptor(files[1])],
-    });
+    return new RandomAccessPlayer(
+      {
+        name: "CombinedDataProvider",
+        args: { providerInfos: [{}, { prefix: SECOND_BAG_PREFIX }] },
+        children: [getLocalBagDescriptor(files[0]), getLocalBagDescriptor(files[1])],
+      },
+      getPlayerOptions()
+    );
   }
   throw new Error(`Unsupported number of files: ${files.length}`);
 }
@@ -89,15 +95,17 @@ function PlayerManager({
         getRemoteBagGuid(url).then((guid: ?string) => {
           const newPlayer = new RandomAccessPlayer(
             getRemoteBagDescriptor(url, guid, params.has(LOAD_ENTIRE_BAG_QUERY_KEY)),
-            undefined,
-            { autoplay: true, seekToTime: getSeekToTime() }
+            getPlayerOptions()
           );
-
-          if (new URLSearchParams(window.location.search).has(ENABLE_NODE_PLAYGROUND_QUERY_KEY)) {
-            setPlayer(new UserNodePlayer(newPlayer, { setUserNodeDiagnostics, addUserNodeLogs, setUserNodeTrust }));
-          } else {
-            setPlayer(new NodePlayer(newPlayer));
+          const player = new UserNodePlayer(newPlayer, { setUserNodeDiagnostics, addUserNodeLogs, setUserNodeTrust });
+          if (params.has(DEMO_QUERY_KEY)) {
+            // When we're showing a demo, then automatically start playback (we don't normally
+            // do that).
+            setTimeout(() => {
+              player.startPlayback();
+            }, 1000);
           }
+          setPlayer(player);
         });
         if (params.has(DEMO_QUERY_KEY)) {
           importPanelLayout(demoLayoutJson, false, true);

@@ -25,7 +25,7 @@ function getZoomDistanceFromURLParam(): number | void {
 }
 
 // Get the camera target position and orientation
-function getTargetPose(followTf?: string | false, transforms: Transforms) {
+export function getTargetPose(followTf?: string | false, transforms: Transforms) {
   if (followTf) {
     let pose = emptyPose();
     pose = transforms.apply(pose, pose, followTf, transforms.rootOfTransform(followTf).id);
@@ -94,9 +94,7 @@ export function useComputedCameraState({
     newCameraState.distance = getZoomDistanceFromURLParam();
   }
 
-  newCameraState = mergeWith(newCameraState, DEFAULT_CAMERA_STATE, (objVal, srcVal) =>
-    objVal == null ? srcVal : objVal
-  );
+  newCameraState = mergeWith(newCameraState, DEFAULT_CAMERA_STATE, (objVal, srcVal) => objVal ?? srcVal);
 
   return { cameraState: newCameraState, targetPose: targetPose || lastTargetPose };
 }
