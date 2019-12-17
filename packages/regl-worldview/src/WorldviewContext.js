@@ -6,6 +6,7 @@
 //  found in the LICENSE file in the root directory of this source tree.
 //  You may not use this file except in compliance with the License.
 
+import clamp from "lodash/clamp";
 import debounce from "lodash/debounce";
 import * as React from "react";
 import createREGL from "regl";
@@ -251,11 +252,15 @@ export class WorldviewContext {
           regl.clear({ color: intToRGB(0), depth: 1 });
           this._drawInput(true, excludedObjects);
 
+          // make sure the hitbox dimension never exceed the regl framebuffer dimension
+          const w = clamp(hitboxWidth, 1, width - x);
+          const h = clamp(hitboxHeight, 1, height - y);
+
           const pixels = regl.read({
             x,
             y,
-            width: hitboxWidth,
-            height: hitboxHeight,
+            width: w,
+            height: h,
           });
           const hitIds = getIdsFromPixels(pixels);
 
