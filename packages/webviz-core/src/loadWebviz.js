@@ -1,6 +1,6 @@
 /* eslint-disable header/header */
 
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -49,6 +49,7 @@ const defaultHooks = {
     ];
   },
   panelsByCategory() {
+    const GlobalVariables = require("webviz-core/src/panels/GlobalVariables").default;
     const DiagnosticStatusPanel = require("webviz-core/src/panels/diagnostics/DiagnosticStatusPanel").default;
     const DiagnosticSummary = require("webviz-core/src/panels/diagnostics/DiagnosticSummary").default;
     const ImageViewPanel = require("webviz-core/src/panels/ImageView").default;
@@ -56,15 +57,18 @@ const defaultHooks = {
     const NodePlayground = require("webviz-core/src/panels/NodePlayground").default;
     const Note = require("webviz-core/src/panels/Note").default;
     const NumberOfRenders = require("webviz-core/src/panels/NumberOfRenders").default;
+    const PlaybackPerformance = require("webviz-core/src/panels/PlaybackPerformance").default;
     const Plot = require("webviz-core/src/panels/Plot").default;
     const RawMessages = require("webviz-core/src/panels/RawMessages").default;
     const Rosout = require("webviz-core/src/panels/Rosout").default;
     const StateTransitions = require("webviz-core/src/panels/StateTransitions").default;
     const SubscribeToList = require("webviz-core/src/panels/SubscribeToList").default;
+    const TwoDimensionalPlot = require("webviz-core/src/panels/TwoDimensionalPlot").default;
     const ThreeDimensionalViz = require("webviz-core/src/panels/ThreeDimensionalViz").default;
     const { ndash } = require("webviz-core/src/util/entities");
 
     const ros = [
+      { title: "2D Plot", component: TwoDimensionalPlot },
       { title: "3D", component: ThreeDimensionalViz },
       { title: `Diagnostics ${ndash} Summary`, component: DiagnosticSummary },
       { title: `Diagnostics ${ndash} Detail`, component: DiagnosticStatusPanel },
@@ -76,6 +80,7 @@ const defaultHooks = {
     ];
 
     const utilities = [
+      { title: "Global Variables", component: GlobalVariables },
       { title: "Node Playground", component: NodePlayground },
       { title: "Notes", component: Note },
       { title: "Webviz Internals", component: Internals },
@@ -83,6 +88,7 @@ const defaultHooks = {
 
     const debugging = [
       { title: "Number of Renders", component: NumberOfRenders },
+      { title: "Playback Performance", component: PlaybackPerformance },
       { title: "Subscribe to List", component: SubscribeToList },
     ];
 
@@ -92,6 +98,18 @@ const defaultHooks = {
   perPanelHooks: memoize(() => {
     const LaserScanVert = require("webviz-core/src/panels/ThreeDimensionalViz/LaserScanVert").default;
     const { defaultMapPalette } = require("webviz-core/src/panels/ThreeDimensionalViz/commands/utils");
+    const { POINT_CLOUD_DATATYPE, POSE_STAMPED_DATATYPE } = require("webviz-core/src/util/globalConstants");
+
+    const SUPPORTED_MARKER_DATATYPES = {
+      // generally supported datatypes
+      VISUALIZATION_MSGS_MARKER_DATATYPE: "visualization_msgs/Marker",
+      VISUALIZATION_MSGS_MARKER_ARRAY_DATATYPE: "visualization_msgs/MarkerArray",
+      POSE_STAMPED_DATATYPE,
+      POINT_CLOUD_DATATYPE,
+      SENSOR_MSGS_LASER_SCAN_DATATYPE: "sensor_msgs/LaserScan",
+      NAV_MSGS_OCCUPANCY_GRID_DATATYPE: "nav_msgs/OccupancyGrid",
+      GEOMETRY_MSGS_POLYGON_STAMPED_DATATYPE: "geometry_msgs/PolygonStamped",
+    };
 
     return {
       DiagnosticSummary: {
@@ -127,6 +145,7 @@ const defaultHooks = {
           pinTopics: false,
           topicSettings: {},
         },
+        SUPPORTED_MARKER_DATATYPES,
         allSupportedMarkers: [
           "arrow",
           "cube",
@@ -187,15 +206,32 @@ const defaultHooks = {
     return <Root store={store} />;
   },
   topicsWithIncorrectHeaders: () => [],
-  load: () => {},
-  onPanelClose: () => {},
-  onPanelSwap: () => {},
-  onPanelSplit: () => {},
-  onPanelDrag: () => {},
+  load: () => {
+    if (process.env.NODE_ENV === "production" && window.ga) {
+      window.ga("create", "UA-82819136-10", "auto");
+    } else {
+      window.ga = function(...args) {
+        console.log("[debug] ga:", ...args);
+      };
+    }
+    window.ga("send", "pageview");
+  },
   getWorkerDataProviderWorker: () => {
     return require("webviz-core/src/dataProviders/WorkerDataProvider.worker");
   },
   getAdditionalDataProviders: () => {},
+  experimentalFeaturesList() {
+    return {
+      topicGrouping: {
+        name: "Topic Group Management",
+        description:
+          "We're revamping the topic tree to be customizable directly from Webviz. You'll be able to create your own groups and toggle them easily.",
+        developmentDefault: false,
+        productionDefault: false,
+      },
+    };
+  },
+  linkTopicPathSyntaxToHelpPage: () => true,
 };
 
 let hooks = defaultHooks;

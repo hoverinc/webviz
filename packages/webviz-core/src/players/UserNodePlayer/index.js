@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -8,12 +8,13 @@
 import microMemoize from "micro-memoize";
 import { TimeUtil, type Time } from "rosbag";
 
+import signal from "webviz-core/shared/signal";
+import type { SetUserNodeDiagnostics, AddUserNodeLogs, SetUserNodeTrust } from "webviz-core/src/actions/userNodes";
 // $FlowFixMe - flow does not like workers.
 import UserNodePlayerWorker from "worker-loader!webviz-core/src/players/UserNodePlayer/nodeRuntimeWorker"; // eslint-disable-line
 // $FlowFixMe - flow does not like workers.
 import NodeDataWorker from "worker-loader!webviz-core/src/players/UserNodePlayer/nodeTransformerWorker"; // eslint-disable-line
 
-import type { SetUserNodeDiagnostics, AddUserNodeLogs, SetUserNodeTrust } from "webviz-core/src/actions/userNodes";
 import type {
   AdvertisePayload,
   Message,
@@ -39,7 +40,6 @@ import type { UserNodeLog } from "webviz-core/src/players/UserNodePlayer/types";
 import type { UserNodes } from "webviz-core/src/types/panels";
 import type { RosDatatypes } from "webviz-core/src/types/RosDatatypes";
 import Rpc from "webviz-core/src/util/Rpc";
-import signal from "webviz-core/src/util/signal";
 
 type UserNodeActions = {
   setUserNodeDiagnostics: SetUserNodeDiagnostics,
@@ -223,7 +223,8 @@ export default class UserNodePlayer implements Player {
     const nodeRegistrations: NodeRegistration[] = [];
     for (const [nodeId, nodeObj] of Object.entries(this._userNodes)) {
       const node = ((nodeObj: any): { name: string, sourceCode: string });
-      if (!isUserNodeTrusted({ id: nodeId, sourceCode: node.sourceCode })) {
+      const isTrusted = await isUserNodeTrusted({ id: nodeId, sourceCode: node.sourceCode });
+      if (!isTrusted) {
         this._setNodeTrust(nodeId, false);
         continue;
       } else {
@@ -238,7 +239,6 @@ export default class UserNodePlayer implements Player {
         priorRegisteredTopics: nodeRegistrations.map(({ output }) => output),
       });
       const { diagnostics } = nodeData;
-
       this._setUserNodeDiagnostics(nodeId, diagnostics);
       if (diagnostics.some(({ severity }) => severity === DiagnosticSeverity.Error)) {
         continue;

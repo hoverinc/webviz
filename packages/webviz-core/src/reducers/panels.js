@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -39,9 +39,6 @@ const OLD_KEYS = {
   linkedGlobalVariables: "panels.linkedGlobalVariables",
 };
 
-export function getGlobalStateFromStorage(): any {
-  return storage.get(GLOBAL_STATE_STORAGE_KEY);
-}
 export type PanelsState = {
   layout: any,
   // We store config for each panel in a hash keyed by the panel id.

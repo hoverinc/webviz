@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -17,12 +17,15 @@ import {
 } from "webviz-core/src/panels/ThreeDimensionalViz/Layout";
 import styles from "webviz-core/src/panels/ThreeDimensionalViz/Layout.module.scss";
 import SceneBuilder from "webviz-core/src/panels/ThreeDimensionalViz/SceneBuilder";
+import type { TopicSettingsCollection } from "webviz-core/src/panels/ThreeDimensionalViz/SceneBuilder";
 import TopicSettingsEditor from "webviz-core/src/panels/ThreeDimensionalViz/TopicSettingsEditor";
 
 const { useMemo } = React;
 
 type Props = {|
   ...LayoutTopicSettingsSharedProps,
+  topicSettings: TopicSettingsCollection,
+
   sceneBuilder: SceneBuilder,
   editTopicState: ?EditTopicState,
   setEditTopicState: (?EditTopicState) => void,
@@ -43,12 +46,16 @@ function LayoutTopicSettings({
         // stop the event from bubbling up to onControlsOverlayClick but don't preventDefault because checkboxes, buttons, etc. should continue to work
         cancelClick: (e: SyntheticMouseEvent<HTMLDivElement>) => e.stopPropagation(),
         onCloseTopicSettings: () => setEditTopicState(null),
-        onSettingsChange: (settings: {}) => {
+        onSettingsChange: (settings: {} | ((prevSettings: {}) => {})) => {
           if (!editTopicState) {
             return;
           }
           saveConfig({
-            topicSettings: { ...topicSettings, [editTopicState.topic.name]: settings },
+            topicSettings: {
+              ...topicSettings,
+              [editTopicState.topic.name]:
+                typeof settings === "function" ? settings(topicSettings[editTopicState.topic.name] || {}) : settings,
+            },
           });
         },
       };

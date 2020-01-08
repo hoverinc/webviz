@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -11,15 +11,13 @@ import CheckboxMarkedIcon from "@mdi/svg/svg/checkbox-marked.svg";
 import MenuDownIcon from "@mdi/svg/svg/menu-down.svg";
 import WavesIcon from "@mdi/svg/svg/waves.svg";
 import cx from "classnames";
-import { sortBy, last, get, isEqual, omit } from "lodash";
-import memoizeOne from "memoize-one";
+import { sortBy, last, get } from "lodash";
 import * as React from "react";
 import { hot } from "react-hot-loader/root";
 import { createSelector } from "reselect";
 import type { Time } from "rosbag";
 import styled from "styled-components";
 
-import CameraModel from "./CameraModel";
 import ImageCanvas from "./ImageCanvas";
 import imageCanvasStyles from "./ImageCanvas.module.scss";
 import helpContent from "./index.help.md";
@@ -43,8 +41,8 @@ import type { Topic, Message, TypedMessage } from "webviz-core/src/players/types
 import inScreenshotTests from "webviz-core/src/stories/inScreenshotTests";
 import colors from "webviz-core/src/styles/colors.module.scss";
 import type { CameraInfo } from "webviz-core/src/types/Messages";
+import type { SaveConfig } from "webviz-core/src/types/panels";
 import naturalSort from "webviz-core/src/util/naturalSort";
-import reportError from "webviz-core/src/util/reportError";
 import { formatTimeRaw } from "webviz-core/src/util/time";
 import toggle from "webviz-core/src/util/toggle";
 
@@ -57,8 +55,8 @@ export type ImageViewPanelHooks = {
     scale: number,
     synchronize: boolean,
   },
-  imageMarkerArrayDatatypes: string[],
   imageMarkerDatatypes: string[],
+  imageMarkerArrayDatatypes: string[],
 };
 
 export type Config = {|
@@ -74,11 +72,11 @@ export type Config = {|
   saveStoryConfig?: () => void,
 |};
 
-export type SaveConfig = ($Shape<Config>) => void;
+export type SaveImagePanelConfig = SaveConfig<Config>;
 
 type Props = {
   config: Config,
-  saveConfig: SaveConfig,
+  saveConfig: SaveImagePanelConfig,
   topics: Topic[],
 };
 
@@ -88,8 +86,8 @@ const TopicTimestampSpan = styled.span`
   font-style: italic;
 `;
 
-const TopicTimestamp = ({ text, style }: { text: string, style?: { [string]: string } }) =>
-  text === "" ? null : <TopicTimestampSpan style={style}>{text}</TopicTimestampSpan>;
+const TopicTimestamp = ({ text, style: styleObj }: { text: string, style?: { [string]: string } }) =>
+  text === "" ? null : <TopicTimestampSpan style={styleObj}>{text}</TopicTimestampSpan>;
 
 const BottomBar = ({ children, containsOpen }: { children?: React.Node, containsOpen: boolean }) => (
   <div
@@ -181,63 +179,6 @@ function renderEmptyState(
   );
 }
 
-const getCameraModel = memoizeOne(
-  function getCameraModel(cameraInfo: ?CameraInfo): ?CameraModel {
-    if (!cameraInfo) {
-      return null;
-    }
-    try {
-      return new CameraModel(cameraInfo);
-    } catch (err) {
-      reportError(`Failed to initialize camera model from CameraInfo`, err, "user");
-      return null;
-    }
-  },
-  ([cameraInfo]: mixed[], [prevCameraInfo]: mixed[]) => {
-    return isEqual(omit(cameraInfo, "header"), omit(prevCameraInfo, "header"));
-  }
-);
-
-export function buildMarkerData(markers: Message[], scale: number, transformMarkers: boolean, cameraInfo: ?CameraInfo) {
-  if (markers.length === 0) {
-    return {
-      markers,
-      cameraModel: null,
-      originalHeight: undefined,
-      originalWidth: undefined,
-    };
-  }
-  let cameraModel;
-  if (transformMarkers) {
-    cameraModel = getCameraModel(cameraInfo);
-    if (!cameraModel) {
-      return null;
-    }
-  }
-
-  // Markers can only be rendered if we know the original size of the image.
-  let originalWidth;
-  let originalHeight;
-  if (cameraInfo && cameraInfo.width && cameraInfo.height) {
-    // Prefer using CameraInfo can be used to determine the image size.
-    originalWidth = cameraInfo.width;
-    originalHeight = cameraInfo.height;
-  } else if (scale === 1) {
-    // Otherwise, if scale === 1, the image was not downsampled, so the size of the bitmap is accurate.
-    originalWidth = undefined;
-    originalHeight = undefined;
-  } else {
-    return null;
-  }
-
-  return {
-    markers,
-    cameraModel,
-    originalWidth,
-    originalHeight,
-  };
-}
-
 function useOptionallySynchronizedMessages(
   shouldSynchronize: boolean,
   topics: $ReadOnlyArray<PanelAPI.RequestedTopic>
@@ -280,20 +221,20 @@ function ImageView(props: Props) {
   );
 
   const onChangeTopic = useCallback(
-    (cameraTopic: string) => {
+    (newCameraTopic: string) => {
       saveConfig({
-        cameraTopic,
+        cameraTopic: newCameraTopic,
         transformMarkers: getGlobalHooks()
           .perPanelHooks()
-          .ImageView.canTransformMarkersByTopic(cameraTopic),
+          .ImageView.canTransformMarkersByTopic(newCameraTopic),
       });
     },
     [saveConfig]
   );
 
   const onChangeScale = useCallback(
-    (scale: number) => {
-      saveConfig({ scale });
+    (newScale: number) => {
+      saveConfig({ scale: newScale });
     },
     [saveConfig]
   );
@@ -320,13 +261,13 @@ function ImageView(props: Props) {
     }
 
     const items = [...imageTopicsByNamespace.keys()].sort().map((group) => {
-      const topics = imageTopicsByNamespace.get(group);
-      if (!topics) {
+      const imageTopics = imageTopicsByNamespace.get(group);
+      if (!imageTopics) {
         return null;
       } // satisfy flow
-      topics.sort(naturalSort("name"));
+      imageTopics.sort(naturalSort("name"));
 
-      // place rectified topic above other topics
+      // place rectified topic above other imageTopics
       return (
         <SubMenu
           direction="right"
@@ -334,7 +275,7 @@ function ImageView(props: Props) {
           text={group}
           checked={group === cameraNamespace}
           dataTest={group.substr(1)}>
-          {topics.map((topic) => {
+          {imageTopics.map((topic) => {
             return (
               <Item
                 key={topic.name}
@@ -453,7 +394,13 @@ function ImageView(props: Props) {
     },
     [markersToRender]
   );
-  const markerData = buildMarkerData(markersToRender, scale, transformMarkers, cameraInfo);
+
+  const rawMarkerData = {
+    markers: markersToRender,
+    scale,
+    transformMarkers,
+    cameraInfo: markersToRender.length > 0 ? cameraInfo : null,
+  };
 
   const renderToolbar = () => {
     return (
@@ -482,7 +429,7 @@ function ImageView(props: Props) {
         panelHooks={panelHooks}
         topic={cameraTopic}
         image={imageMessage}
-        markerData={markerData}
+        rawMarkerData={rawMarkerData}
         config={config}
         saveConfig={saveConfig}
       />

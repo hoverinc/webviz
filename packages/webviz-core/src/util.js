@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -50,6 +50,16 @@ export function arrayToPoint(v: ?[number, number, number]) {
     return null;
   }
   return { x: v[0], y: v[1], z: v[2] };
+}
+
+// returns the linear interpolation between a and b based on unit-range variable t
+export function lerp(t: number, a: number, b: number): number {
+  // Clamp t to (0, 1)
+  t = Math.min(Math.max(t, 0.0), 1.0);
+  if (a === b) {
+    return a;
+  }
+  return a + t * (b - a);
 }
 
 // the following regex captures characters allowed in the value of a kv-pair in the query component

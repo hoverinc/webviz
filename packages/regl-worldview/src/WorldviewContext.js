@@ -46,7 +46,7 @@ type InitializedData = {
 };
 
 export type DrawInput = {
-  instance: React.Component<any>,
+  instance: Command<any>,
   reglCommand: RawCommand<any>,
   children: Props,
   layerIndex: ?number,
@@ -117,7 +117,12 @@ export class WorldviewContext {
     const regl = this._instrumentCommands(
       createREGL({
         canvas,
-        extensions: ["angle_instanced_arrays", "oes_texture_float", "oes_element_index_uint"],
+        extensions: [
+          "angle_instanced_arrays",
+          "oes_texture_float",
+          "oes_element_index_uint",
+          "oes_standard_derivatives",
+        ],
         profile: getNodeEnv() !== "production",
       })
     );
@@ -286,7 +291,7 @@ export class WorldviewContext {
     canvasY: number,
     enableStackedObjectEvents: boolean,
     maxStackedObjectCount: number
-  ): Promise<Array<[MouseEventObject, Command]>> {
+  ): Promise<Array<[MouseEventObject, Command<any>]>> {
     if (!this.initializedData) {
       return new Promise((_, reject) => reject(new Error("regl data not initialized yet")));
     }

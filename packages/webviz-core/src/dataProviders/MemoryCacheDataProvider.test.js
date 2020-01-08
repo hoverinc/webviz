@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2019-present, GM Cruise LLC
+//  Copyright (c) 2019-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -136,6 +136,17 @@ describe("MemoryCacheDataProvider", () => {
           maxCacheSizeInBytes: 5,
         })
       ).toEqual({ blockIndexesToKeep: new Set([1, 0]), newRecentRanges: [{ start: 0, end: 5 }] });
+    });
+
+    it("keeps all blocks if we haven't reached the maximum cache size yet, even when having some empty blocks", () => {
+      expect(
+        getBlocksToKeep({
+          recentBlockRanges: [{ start: 0, end: 5 }],
+          blockSizesInBytes: [1, 0, 2, undefined, undefined],
+          minimumBlocksToKeep: 0,
+          maxCacheSizeInBytes: 5,
+        })
+      ).toEqual({ blockIndexesToKeep: new Set([2, 1, 0]), newRecentRanges: [{ start: 0, end: 5 }] });
     });
 
     it("keeps blocks when we *just* exceed the maximum", () => {

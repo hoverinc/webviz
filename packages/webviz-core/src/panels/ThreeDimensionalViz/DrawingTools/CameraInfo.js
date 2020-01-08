@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -19,25 +19,18 @@ import { UncontrolledValidatedInput, YamlInput } from "webviz-core/src/component
 import { point2DValidator, cameraStateValidator } from "webviz-core/src/components/validators";
 import { getGlobalHooks } from "webviz-core/src/loadWebviz";
 import { Renderer } from "webviz-core/src/panels/ThreeDimensionalViz/index";
+import { SValue, SLabel } from "webviz-core/src/panels/ThreeDimensionalViz/Interactions/Interactions";
 import colors from "webviz-core/src/styles/colors.module.scss";
 import clipboard from "webviz-core/src/util/clipboard";
 
+const LABEL_WIDTH = 112;
 const TEMP_VEC3 = [0, 0, 0];
 const ZERO_VEC3 = Object.freeze([0, 0, 0]);
 const DEFAULT_CAMERA_INFO_WIDTH = 260;
 
-const LABEL_WIDTH = 112;
 const SRow = styled.div`
   display: flex;
   align-items: center;
-`;
-
-const SLabel = styled.label`
-  width: ${LABEL_WIDTH}px;
-  margin: 4px 0;
-`;
-export const SValue = styled.span`
-  color: ${colors.highlight};
 `;
 
 type CameraStateInfoProps = {
@@ -77,7 +70,7 @@ function CameraStateInfo({ cameraState, onAlignXYAxis }: CameraStateInfoProps) {
         })
         .map(([key, val]) => (
           <SRow key={key}>
-            <SLabel>{key}:</SLabel> <SValue>{val}</SValue>
+            <SLabel width={LABEL_WIDTH}>{key}:</SLabel> <SValue>{val}</SValue>
             {key === "thetaOffset" && (
               <Button
                 onClick={onAlignXYAxis}
@@ -111,7 +104,12 @@ export default function CameraInfo({
   return (
     <Flex col style={{ minWidth: DEFAULT_CAMERA_INFO_WIDTH }}>
       <Flex row reverse>
-        <Button tooltip="Copy cameraState" small onClick={() => clipboard.copy(JSON.stringify(cameraState, null, 2))}>
+        <Button
+          tooltip="Copy cameraState"
+          small
+          onClick={() => {
+            clipboard.copy(JSON.stringify(cameraState, null, 2));
+          }}>
           Copy
         </Button>
         <Button
@@ -130,7 +128,7 @@ export default function CameraInfo({
         <UncontrolledValidatedInput
           format="yaml"
           value={cameraState}
-          onChange={(cameraState) => saveConfig({ cameraState })}
+          onChange={(newCameraState) => saveConfig({ cameraState: newCameraState })}
           dataValidator={cameraStateValidator}
         />
       ) : (
@@ -155,21 +153,16 @@ export default function CameraInfo({
                     inputStyle={{ width: 140 }}
                     value={{ x: camPos2DTrimmed[0], y: camPos2DTrimmed[1] }}
                     onChange={(data) => {
-                      const { target, targetOffset } = cameraState;
-                      const targetHeading = cameraStateSelectors.targetHeading(cameraState);
                       const newPos = [data.x, data.y, 0];
                       // extract the targetOffset by subtracting from the target and un-rotating by heading
                       const newTargetOffset = vec3.rotateZ(
                         [0, 0, 0],
-                        vec3.sub(TEMP_VEC3, newPos, target),
+                        vec3.sub(TEMP_VEC3, newPos, cameraState.target),
                         ZERO_VEC3,
-                        targetHeading
+                        cameraStateSelectors.targetHeading(cameraState)
                       );
-                      if (!isEqual(targetOffset, newTargetOffset)) {
-                        onCameraStateChange({
-                          ...cameraState,
-                          targetOffset: newTargetOffset,
-                        });
+                      if (!isEqual(cameraState.targetOffset, newTargetOffset)) {
+                        onCameraStateChange({ ...cameraState, targetOffset: newTargetOffset });
                       }
                     }}
                     dataValidator={point2DValidator}

@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -236,7 +236,7 @@ type PointCloud1 = StampedMessage & {
   type: "PointCloud1",
 };
 
-export type PointCloud2Field = {
+export type PointField = {
   name: string,
   offset: number,
   datatype: number,
@@ -244,7 +244,7 @@ export type PointCloud2Field = {
 };
 
 export type PointCloud2 = StampedMessage & {
-  fields: PointCloud2Field[],
+  fields: PointField[],
   height: number,
   width: number,
   is_bigendian: number, // TODO: Do we need this?
