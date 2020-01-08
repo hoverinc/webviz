@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -43,6 +43,27 @@ storiesOf("<PanelList>", module)
           if (input) {
             input.focus();
             input.value = "h";
+            TestUtils.Simulate.change(input);
+          }
+        }
+      }}>
+      <PanelList
+        onPanelSelect={() => {}}
+        mosaicId=""
+        mosaicLayout=""
+        changePanelLayout={() => {}}
+        savePanelConfig={() => {}}
+      />
+    </div>
+  ))
+  .add("case-insensitive filtering and highlight submenu", () => (
+    <div
+      ref={(el) => {
+        if (el) {
+          const input: ?HTMLInputElement = (el.querySelector("input"): any);
+          if (input) {
+            input.focus();
+            input.value = "dp";
             TestUtils.Simulate.change(input);
           }
         }

@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2019-present, GM Cruise LLC
+//  Copyright (c) 2019-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -31,7 +31,7 @@ describe("useDataSourceInfo", () => {
     },
   ];
   const datatypes = {
-    Foo: [],
+    Foo: { fields: [] },
   };
 
   // Create a helper component that exposes the results of the hook in a Jest mock function
@@ -51,8 +51,7 @@ describe("useDataSourceInfo", () => {
         datatypes={datatypes}
         capabilities={["hello"]}
         messages={[messages[0]]}
-        startTime={{ sec: 0, nsec: 1 }}
-        endTime={{ sec: 10, nsec: 0 }}>
+        startTime={{ sec: 0, nsec: 1 }}>
         <Test />
       </MockMessagePipelineProvider>
     );
@@ -60,10 +59,9 @@ describe("useDataSourceInfo", () => {
       [
         {
           topics: [{ name: "/foo", datatype: "Foo" }],
-          datatypes: { Foo: [] },
+          datatypes: { Foo: { fields: [] } },
           capabilities: ["hello"],
           startTime: { sec: 0, nsec: 1 },
-          endTime: { sec: 10, nsec: 0 },
           playerId: "1",
         },
       ],
@@ -79,8 +77,7 @@ describe("useDataSourceInfo", () => {
         datatypes={datatypes}
         capabilities={["hello"]}
         messages={[messages[0]]}
-        startTime={{ sec: 0, nsec: 1 }}
-        endTime={{ sec: 10, nsec: 0 }}>
+        startTime={{ sec: 0, nsec: 1 }}>
         <Test />
       </MockMessagePipelineProvider>
     );
@@ -88,10 +85,9 @@ describe("useDataSourceInfo", () => {
       [
         {
           topics: [{ name: "/foo", datatype: "Foo" }],
-          datatypes: { Foo: [] },
+          datatypes: { Foo: { fields: [] } },
           capabilities: ["hello"],
           startTime: { sec: 0, nsec: 1 },
-          endTime: { sec: 10, nsec: 0 },
           playerId: "1",
         },
       ],
@@ -106,10 +102,9 @@ describe("useDataSourceInfo", () => {
       [
         {
           topics: [{ name: "/bar", datatype: "Bar" }, { name: "/foo", datatype: "Foo" }],
-          datatypes: { Foo: [] },
+          datatypes: { Foo: { fields: [] } },
           capabilities: ["hello"],
           startTime: { sec: 0, nsec: 1 },
-          endTime: { sec: 10, nsec: 0 },
           playerId: "1",
         },
       ],

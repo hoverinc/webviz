@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -19,13 +19,16 @@ import styled from "styled-components";
 import uuid from "uuid";
 
 import { setUserNodes as setUserNodesAction } from "webviz-core/src/actions/panels";
+import Button from "webviz-core/src/components/Button";
 import Flex from "webviz-core/src/components/Flex";
 import Icon from "webviz-core/src/components/Icon";
 import Item from "webviz-core/src/components/Menu/Item";
 import Panel from "webviz-core/src/components/Panel";
 import PanelToolbar from "webviz-core/src/components/PanelToolbar";
 import SpinningLoadingIcon from "webviz-core/src/components/SpinningLoadingIcon";
+import TextContent from "webviz-core/src/components/TextContent";
 import BottomBar from "webviz-core/src/panels/NodePlayground/BottomBar";
+import Playground from "webviz-core/src/panels/NodePlayground/playground-icon.svg";
 import Sidebar from "webviz-core/src/panels/NodePlayground/Sidebar";
 import { trustUserNode } from "webviz-core/src/players/UserNodePlayer/nodeSecurity";
 import type { UserNodeState } from "webviz-core/src/reducers/userNodes";
@@ -64,12 +67,12 @@ type Props = {
 };
 
 const UnsavedDot = styled.div`
-  display: ${({ isSaved }: { isSaved: boolean }) => (isSaved ? "none" : "initial")}
+  display: ${({ isSaved }: { isSaved: boolean }) => (isSaved ? "none" : "initial")};
   width: 6px;
   height: 6px;
   border-radius: 50%;
   position: absolute;
-  right: 10px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
   background-color: ${colors.DARK9};
@@ -120,7 +123,52 @@ const SecurityBar = ({ onClick }: { onClick: () => void }) => (
   </SecurityBarWrapper>
 );
 
+const SWelcomeScreen = styled.div`
+  display: flex;
+  text-align: center;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 25%;
+  height: 100%;
+  > * {
+    margin: 4px 0;
+  }
+`;
+
 export type Explorer = null | "docs" | "nodes";
+
+const WelcomeScreen = ({
+  addNewNode,
+  updateExplorer,
+}: {|
+  addNewNode: () => void,
+  updateExplorer: (explorer: Explorer) => void,
+|}) => {
+  return (
+    <SWelcomeScreen>
+      <Playground />
+      <TextContent>
+        Welcome to Node Playground! Get started by reading the{" "}
+        <a
+          href=""
+          onClick={(e) => {
+            e.preventDefault();
+            updateExplorer("docs");
+          }}>
+          docs
+        </a>
+        , or just create a new node.
+      </TextContent>
+      <Button style={{ marginTop: "8px" }} onClick={addNewNode}>
+        <Icon medium>
+          <PlusIcon />
+        </Icon>{" "}
+        New node
+      </Button>
+    </SWelcomeScreen>
+  );
+};
 
 function NodePlayground(props: Props) {
   const { config, saveConfig } = props;
@@ -169,15 +217,16 @@ function NodePlayground(props: Props) {
   const addNewNode = React.useCallback(
     () => {
       const newNodeId = uuid.v4();
-      setUserNodes({
-        [newNodeId]: {
-          sourceCode: skeletonBody,
-          name: `${DEFAULT_WEBVIZ_NODE_PREFIX}${newNodeId.split("-")[0]}`,
-        },
-      });
-      saveConfig({ selectedNodeId: newNodeId });
       // TODO: Add integration test for this flow.
-      trustUserNode({ id: newNodeId, sourceCode: skeletonBody });
+      trustUserNode({ id: newNodeId, sourceCode: skeletonBody }).then(() => {
+        setUserNodes({
+          [newNodeId]: {
+            sourceCode: skeletonBody,
+            name: `${DEFAULT_WEBVIZ_NODE_PREFIX}${newNodeId.split("-")[0]}`,
+          },
+        });
+        saveConfig({ selectedNodeId: newNodeId });
+      });
     },
     [saveConfig, setUserNodes]
   );
@@ -187,11 +236,24 @@ function NodePlayground(props: Props) {
       if (!selectedNodeId || !selectedNode) {
         return;
       }
-      trustUserNode({ id: selectedNodeId, sourceCode: selectedNode.sourceCode });
-      // no-op in order to trigger the useUserNodes hook.
-      setUserNodes({});
+      trustUserNode({ id: selectedNodeId, sourceCode: selectedNode.sourceCode }).then(() => {
+        // no-op in order to trigger the useUserNodes hook.
+        setUserNodes({});
+      });
     },
     [selectedNode, selectedNodeId, setUserNodes]
+  );
+
+  const saveNode = React.useCallback(
+    () => {
+      if (!selectedNodeId) {
+        return;
+      }
+      trustUserNode({ id: selectedNodeId, sourceCode: stagedScript }).then(() => {
+        setUserNodes({ [selectedNodeId]: { ...selectedNode, sourceCode: stagedScript } });
+      });
+    },
+    [selectedNodeId, selectedNode, stagedScript, setUserNodes]
   );
 
   return (
@@ -235,7 +297,7 @@ function NodePlayground(props: Props) {
                       type="text"
                       placeholder="node name"
                       value={selectedNode ? selectedNode.name : ""}
-                      style={{ borderRadius: 0, margin: 0, backgroundColor: colors.DARK2 }}
+                      style={{ borderRadius: 0, margin: 0, backgroundColor: colors.DARK2, padding: "4px 20px" }}
                       spellCheck={false}
                       onChange={(e) => {
                         const newNodeName = e.target.value;
@@ -262,6 +324,7 @@ function NodePlayground(props: Props) {
                 typeof nodeDiagnosticsAndLogs[selectedNodeId].trusted === "boolean" &&
                 !nodeDiagnosticsAndLogs[selectedNodeId].trusted && <SecurityBar onClick={trustSelectedNode} />}
               <Flex col style={{ flexGrow: 1, position: "relative" }}>
+                {!selectedNodeId && <WelcomeScreen addNewNode={addNewNode} updateExplorer={updateExplorer} />}
                 <div
                   key={`${height}x${width}`}
                   style={{
@@ -280,20 +343,19 @@ function NodePlayground(props: Props) {
                       </Flex>
                     }>
                     {editorForStorybook || (
-                      <Editor script={stagedScript} setScript={setStagedScript} vimMode={vimMode} />
+                      <Editor
+                        script={stagedScript}
+                        setScript={setStagedScript}
+                        vimMode={vimMode}
+                        resizeKey={`${width}-${height}-${explorer || "none"}-${selectedNodeId || "none"}`}
+                      />
                     )}
                   </React.Suspense>
                 </div>
                 <BottomBar
                   nodeId={selectedNodeId}
                   isSaved={isNodeSaved}
-                  save={() => {
-                    if (!selectedNodeId) {
-                      return;
-                    }
-                    setUserNodes({ [selectedNodeId]: { ...selectedNode, sourceCode: stagedScript } });
-                    trustUserNode({ id: selectedNodeId, sourceCode: stagedScript });
-                  }}
+                  save={saveNode}
                   diagnostics={selectedNodeDiagnostics}
                   logs={selectedNodeLogs}
                 />

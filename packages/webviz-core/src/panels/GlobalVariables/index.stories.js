@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -20,7 +20,7 @@ import Storage from "webviz-core/src/util/Storage";
 const defaultGlobalState = getGlobalHooks().getDefaultGlobalStates();
 
 const exampleVariables = {
-  someNum: 5,
+  someNum: 0,
   someText: "active",
   someObj: { age: 50 },
   someArrOfNums: [1, 2, 3],
@@ -61,8 +61,13 @@ function setStorage(globalVariables) {
   storage.set(GLOBAL_STATE_STORAGE_KEY, { ...defaultGlobalState, globalVariables });
 }
 
-function PanelWithData({ linkedGlobalVariables = [], ...rest }: { linkedGlobalVariables?: LinkedGlobalVariable[] }) {
-  if (linkedGlobalVariables.length) {
+function PanelWithData({
+  linkedGlobalVariables: linkedGlobalVars = [],
+  ...rest
+}: {
+  linkedGlobalVariables?: LinkedGlobalVariable[],
+}) {
+  if (linkedGlobalVars.length) {
     setStorage(exampleDataWithLinkedVariables);
   } else {
     setStorage(exampleVariables);
@@ -70,7 +75,7 @@ function PanelWithData({ linkedGlobalVariables = [], ...rest }: { linkedGlobalVa
   const fixture = {
     topics: [],
     frame: {},
-    linkedGlobalVariables,
+    linkedGlobalVariables: linkedGlobalVars,
   };
 
   return (
@@ -105,7 +110,7 @@ storiesOf("<GlobalVariables>", module)
           if (addBtn) {
             addBtn.click();
             setImmediate(() => {
-              const firstKeyInput = document.querySelector("[data-test='global-variable-key-input']");
+              const firstKeyInput = document.querySelector("[data-test='global-variable-key'] input");
               if (firstKeyInput) {
                 triggerInputChange(firstKeyInput, "");
               }
@@ -123,7 +128,7 @@ storiesOf("<GlobalVariables>", module)
           if (addBtn) {
             addBtn.click();
             setImmediate(() => {
-              const firstKeyInput = document.querySelector("[data-test='global-variable-key-input']");
+              const firstKeyInput = document.querySelector("[data-test='global-variable-key'] input");
               if (firstKeyInput) {
                 triggerInputChange(firstKeyInput, "$someText");
               }
@@ -203,20 +208,6 @@ storiesOf("<GlobalVariables>", module)
                 unlinkFormBtn.click();
               }
             });
-          }
-        }}
-      />
-    );
-  })
-  .add(`after clicking "Clear all"`, () => {
-    return (
-      <PanelWithData
-        linkedGlobalVariables={linkedGlobalVariables}
-        onMount={(el) => {
-          const btn = el.querySelector("[data-test='clear-all-btn']");
-          console.log("btn: ", btn);
-          if (btn) {
-            btn.click();
           }
         }}
       />

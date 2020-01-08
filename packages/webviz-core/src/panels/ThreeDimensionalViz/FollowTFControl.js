@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -75,9 +75,7 @@ const buildTfTree = (transforms: Transform[]): TfTree => {
     node.depth = depth;
     node.children.forEach((child) => setDepth(child, depth + 1));
   };
-  tree.roots.forEach((root) =>
-    setDepth(root, root.tf.id === getGlobalHooks().perPanelHooks().ThreeDimensionalViz.rootTransformFrame ? -1 : 0)
-  );
+  tree.roots.forEach((root) => setDepth(root, 0));
 
   return tree;
 };
@@ -91,9 +89,7 @@ type Props = {
 
 function* getDescendants(nodes: TfTreeNode[]) {
   for (const node of nodes) {
-    if (node.tf.id !== getGlobalHooks().perPanelHooks().ThreeDimensionalViz.rootTransformFrame) {
-      yield node;
-    }
+    yield node;
     yield* getDescendants(node.children);
   }
 }
@@ -180,10 +176,10 @@ const FollowTFControl = memo<Props>((props: Props) => {
   );
 
   const onSelectFrame = useCallback(
-    (id: string, item: mixed, autocomplete: Autocomplete) => {
+    (id: string, item: mixed, autocompleteNode: Autocomplete) => {
       setLastSelectedFrame(id === getDefaultFollowTransformFrame() ? undefined : id);
       onFollowChange(id, followOrientation);
-      autocomplete.blur();
+      autocompleteNode.blur();
     },
     [setLastSelectedFrame, getDefaultFollowTransformFrame, onFollowChange, followOrientation]
   );

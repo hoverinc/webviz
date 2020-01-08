@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -9,11 +9,12 @@
 import { vec3 } from "gl-matrix";
 import hoistNonReactStatics from "hoist-non-react-statics";
 import { omit } from "lodash";
-import React, { type Node, useCallback, useLayoutEffect } from "react";
+import React, { type Node, useCallback } from "react";
 import { hot } from "react-hot-loader/root";
 import { useSelector } from "react-redux";
 import { cameraStateSelectors, type CameraState, DEFAULT_CAMERA_STATE } from "regl-worldview";
 
+import { useExperimentalFeature } from "webviz-core/src/components/ExperimentalFeatures";
 import { FrameCompatibility } from "webviz-core/src/components/MessageHistory/FrameCompatibility";
 import { useMessagePipeline } from "webviz-core/src/components/MessagePipeline";
 import Panel from "webviz-core/src/components/Panel";
@@ -25,10 +26,10 @@ import {
   getEquivalentOffsetsWithoutTarget,
   useComputedCameraState,
 } from "webviz-core/src/panels/ThreeDimensionalViz/threeDimensionalVizUtils";
-import {
-  type TopicDisplayMode,
-  TOPIC_DISPLAY_MODES,
-} from "webviz-core/src/panels/ThreeDimensionalViz/TopicSelector/TopicDisplayModeSelector";
+import { EXPERIMENTAL_FEATURES_STORAGE_KEY } from "webviz-core/src/panels/ThreeDimensionalViz/TopicGroups/constants";
+import LayoutForTopicGroups from "webviz-core/src/panels/ThreeDimensionalViz/TopicGroups/LayoutForTopicGroups";
+import type { TopicGroupConfig } from "webviz-core/src/panels/ThreeDimensionalViz/TopicGroups/types";
+import { type TopicDisplayMode } from "webviz-core/src/panels/ThreeDimensionalViz/TopicSelector/TopicDisplayModeSelector";
 import Transforms from "webviz-core/src/panels/ThreeDimensionalViz/Transforms";
 import withTransforms from "webviz-core/src/panels/ThreeDimensionalViz/withTransforms";
 import type { Frame, Topic } from "webviz-core/src/players/types";
@@ -37,24 +38,30 @@ import { TRANSFORM_TOPIC } from "webviz-core/src/util/globalConstants";
 
 export type ThreeDimensionalVizConfig = {
   autoTextBackgroundColor?: boolean,
-  checkedNodes: string[],
-  expandedNodes: string[],
   cameraState: $Shape<CameraState>,
   followTf?: string | false,
   followOrientation?: boolean,
-  topicSettings: TopicSettingsCollection,
-  modifiedNamespaceTopics: string[],
+  modifiedNamespaceTopics?: string[],
   pinTopics: boolean,
   savedPropsVersion?: ?number, // eslint-disable-line react/no-unused-prop-types
   topicDisplayMode?: TopicDisplayMode,
+  flattenMarkers?: boolean,
+  selectedPolygonEditFormat?: "json" | "yaml",
+  showCrosshair?: boolean,
+
+  topicGroups?: TopicGroupConfig[],
+  // TODO(Audrey): remove the 4 props below once topic groups is released
+  // props to be replaced by topicGroups
+  expandedNodes: string[],
+  checkedNodes: string[],
+  topicSettings: TopicSettingsCollection,
+  // override topic group feature flag for screenshot test
+  testShowTopicTree?: boolean,
 
   // legacy props
   hideMap?: ?boolean, // eslint-disable-line react/no-unused-prop-types
   useHeightMap?: ?boolean, // eslint-disable-line react/no-unused-prop-types
   follow?: boolean,
-  flattenMarkers?: boolean,
-  selectedPolygonEditFormat?: "json" | "yaml",
-  showCrosshair?: boolean,
 };
 export type Save3DConfig = SaveConfig<ThreeDimensionalVizConfig>;
 
@@ -78,19 +85,7 @@ const BaseRenderer = (props: Props, ref) => {
     setSubscriptions,
     topics,
     transforms,
-    config: {
-      autoTextBackgroundColor,
-      checkedNodes,
-      expandedNodes,
-      followOrientation,
-      followTf,
-      modifiedNamespaceTopics,
-      pinTopics,
-      selectedPolygonEditFormat,
-      showCrosshair,
-      topicDisplayMode,
-      topicSettings,
-    },
+    config: { followOrientation, followTf, testShowTopicTree },
   } = props;
   const extensions = useSelector((state) => state.extensions);
 
@@ -107,18 +102,6 @@ const BaseRenderer = (props: Props, ref) => {
     followOrientation,
     transforms,
   });
-
-  // update open source checked nodes
-  useLayoutEffect(
-    () => {
-      const isOpenSource = checkedNodes.length === 1 && checkedNodes[0] === "name:Topics" && topics.length;
-      if (isOpenSource) {
-        const newCheckedNodes = isOpenSource ? checkedNodes.concat(topics.map((t) => t.name)) : checkedNodes;
-        saveConfig({ checkedNodes: newCheckedNodes }, { keepLayoutInUrl: true });
-      }
-    },
-    [checkedNodes, saveConfig, topics]
-  );
 
   // use callbackInputsRef to make sure the input changes don't trigger `onFollowChange` or `onAlignXYAxis` to change
   const callbackInputsRef = React.useRef({
@@ -137,12 +120,19 @@ const BaseRenderer = (props: Props, ref) => {
   };
   const onFollowChange = useCallback(
     (newFollowTf?: string | false, newFollowOrientation?: boolean) => {
-      const { configCameraState, configFollowOrientation, configFollowTf, targetPose } = callbackInputsRef.current;
+      const {
+        configCameraState,
+        configFollowOrientation,
+        configFollowTf,
+        targetPose: currentTargetPose,
+      } = callbackInputsRef.current;
       const newCameraState = { ...configCameraState };
       if (newFollowTf) {
         // When switching to follow orientation, adjust thetaOffset to preserve camera rotation.
-        if (newFollowOrientation && !configFollowOrientation && targetPose) {
-          const heading = cameraStateSelectors.targetHeading({ targetOrientation: targetPose.targetOrientation });
+        if (newFollowOrientation && !configFollowOrientation && currentTargetPose) {
+          const heading = cameraStateSelectors.targetHeading({
+            targetOrientation: currentTargetPose.targetOrientation,
+          });
           newCameraState.targetOffset = vec3.rotateZ(
             [0, 0, 0],
             newCameraState.targetOffset || DEFAULT_CAMERA_STATE.targetOffset,
@@ -155,7 +145,7 @@ const BaseRenderer = (props: Props, ref) => {
         if (!configFollowTf) {
           newCameraState.targetOffset = [0, 0, 0];
         }
-      } else if (configFollowTf && targetPose) {
+      } else if (configFollowTf && currentTargetPose) {
         // When unfollowing, preserve the camera position and orientation.
         Object.assign(
           newCameraState,
@@ -164,7 +154,7 @@ const BaseRenderer = (props: Props, ref) => {
               targetOffset: configCameraState.targetOffset || DEFAULT_CAMERA_STATE.targetOffset,
               thetaOffset: configCameraState.thetaOffset || DEFAULT_CAMERA_STATE.thetaOffset,
             },
-            targetPose,
+            currentTargetPose,
             configFollowOrientation
           )
         );
@@ -194,35 +184,53 @@ const BaseRenderer = (props: Props, ref) => {
 
   // useImperativeHandle so consumer component (e.g.Follow stories) can call onFollowChange directly.
   React.useImperativeHandle(ref, (): any => ({ onFollowChange }));
+  const enableTopicGroupingFeature = useExperimentalFeature(EXPERIMENTAL_FEATURES_STORAGE_KEY);
+  const enableTopicGrouping = testShowTopicTree != null ? !testShowTopicTree : enableTopicGroupingFeature;
 
   return (
-    <Layout
-      autoTextBackgroundColor={autoTextBackgroundColor}
-      cameraState={cameraState}
-      checkedNodes={checkedNodes}
-      cleared={cleared}
-      currentTime={currentTime}
-      expandedNodes={expandedNodes}
-      extensions={extensions}
-      followOrientation={!!followOrientation}
-      followTf={followTf}
-      frame={frame}
-      helpContent={helpContent}
-      isPlaying={isPlaying}
-      modifiedNamespaceTopics={modifiedNamespaceTopics}
-      onAlignXYAxis={onAlignXYAxis}
-      onCameraStateChange={onCameraStateChange}
-      onFollowChange={onFollowChange}
-      pinTopics={pinTopics}
-      saveConfig={saveConfig}
-      selectedPolygonEditFormat={selectedPolygonEditFormat || "yaml"}
-      showCrosshair={!!showCrosshair}
-      topicDisplayMode={topicDisplayMode || TOPIC_DISPLAY_MODES.SHOW_TREE.value}
-      topics={topics}
-      topicSettings={topicSettings}
-      transforms={transforms}
-      setSubscriptions={setSubscriptions}
-    />
+    <>
+      {enableTopicGrouping ? (
+        <LayoutForTopicGroups
+          cameraState={cameraState}
+          config={config}
+          cleared={cleared}
+          currentTime={currentTime}
+          extensions={extensions}
+          followOrientation={!!followOrientation}
+          followTf={followTf}
+          frame={frame}
+          helpContent={helpContent}
+          isPlaying={isPlaying}
+          onAlignXYAxis={onAlignXYAxis}
+          onCameraStateChange={onCameraStateChange}
+          onFollowChange={onFollowChange}
+          saveConfig={saveConfig}
+          topics={topics}
+          transforms={transforms}
+          setSubscriptions={setSubscriptions}
+        />
+      ) : (
+        <Layout
+          cameraState={cameraState}
+          config={config}
+          cleared={cleared}
+          currentTime={currentTime}
+          extensions={extensions}
+          followOrientation={!!followOrientation}
+          followTf={followTf}
+          frame={frame}
+          helpContent={helpContent}
+          isPlaying={isPlaying}
+          onAlignXYAxis={onAlignXYAxis}
+          onCameraStateChange={onCameraStateChange}
+          onFollowChange={onFollowChange}
+          saveConfig={saveConfig}
+          topics={topics}
+          transforms={transforms}
+          setSubscriptions={setSubscriptions}
+        />
+      )}
+    </>
   );
 };
 

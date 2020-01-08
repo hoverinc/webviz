@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2019-present, GM Cruise LLC
+//  Copyright (c) 2019-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -14,7 +14,6 @@ import renderToBody from "webviz-core/src/components/renderToBody";
 import ShareJsonModal from "webviz-core/src/components/ShareJsonModal";
 import type { State } from "webviz-core/src/reducers";
 import type { PanelsState } from "webviz-core/src/reducers/panels";
-import type { ImportPanelLayoutPayload } from "webviz-core/src/types/panels";
 
 type OwnProps = {|
   onRequestClose: () => void,
@@ -23,19 +22,19 @@ type OwnProps = {|
 type Props = {|
   ...OwnProps,
   panels: PanelsState,
-  importPanelLayout: (ImportPanelLayoutPayload, boolean) => void,
+  importPanelLayout: typeof importPanelLayout,
 |};
 
-function UnconnectedLayoutModal({ onRequestClose, importPanelLayout, panels }: Props) {
+function UnconnectedLayoutModal({ onRequestClose, importPanelLayout: importLayout, panels }: Props) {
   return (
     <ShareJsonModal
       onRequestClose={onRequestClose}
       value={panels}
       onChange={useCallback(
         (layout: any) => {
-          importPanelLayout(layout, false);
+          importLayout(layout);
         },
-        [importPanelLayout]
+        [importLayout]
       )}
       noun="layout"
     />

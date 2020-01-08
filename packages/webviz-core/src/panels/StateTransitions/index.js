@@ -1,12 +1,12 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
 //  You may not use this file except in compliance with the License.
 
-import _ from "lodash";
+import { isEqual, uniq } from "lodash";
 import * as React from "react";
 import Dimensions from "react-container-dimensions";
 import { hot } from "react-hot-loader/root";
@@ -31,12 +31,13 @@ import TimeBasedChart, { type TimeBasedChartTooltipData } from "webviz-core/src/
 import { getGlobalHooks } from "webviz-core/src/loadWebviz";
 import colors from "webviz-core/src/styles/colors.module.scss";
 import mixins from "webviz-core/src/styles/mixins.module.scss";
+import type { PanelConfig } from "webviz-core/src/types/panels";
 import { positiveModulo } from "webviz-core/src/util";
 import { darkColor, lineColors } from "webviz-core/src/util/plotColors";
 import { subtractTimes, toSec } from "webviz-core/src/util/time";
 import { grey } from "webviz-core/src/util/toolsColorScheme";
 
-const transitionableRosTypes = [
+export const transitionableRosTypes = [
   "bool",
   "int8",
   "uint8",
@@ -171,6 +172,25 @@ const plugins = {
 export type StateTransitionPath = { value: string, timestampMethod: MessageHistoryTimestampMethod };
 export type StateTransitionConfig = { paths: StateTransitionPath[] };
 
+const defaultConfig = getGlobalHooks().perPanelHooks().StateTransitions.defaultConfig;
+
+export function openSiblingStateTransitionsPanel(
+  openSiblingPanel: (string, cb: (PanelConfig) => PanelConfig) => void,
+  topicName: string
+) {
+  openSiblingPanel("StateTransitions", (config: StateTransitionConfig) => {
+    // If we're opening a brand new panel, don't use the default config, since it might have too
+    // much stuff in it.
+    if (isEqual(config, defaultConfig)) {
+      config = { paths: [] };
+    }
+    return ({
+      ...config,
+      paths: uniq(config.paths.concat([{ value: topicName, enabled: true, timestampMethod: "receiveTime" }])),
+    }: StateTransitionConfig);
+  });
+}
+
 type Props = {
   config: StateTransitionConfig,
   saveConfig: ($Shape<StateTransitionConfig>) => void,
@@ -178,7 +198,7 @@ type Props = {
 
 class StateTransitions extends React.PureComponent<Props> {
   static panelType = "StateTransitions";
-  static defaultConfig = getGlobalHooks().perPanelHooks().StateTransitions.defaultConfig;
+  static defaultConfig = defaultConfig;
 
   _onInputChange = (value: string, index: ?number) => {
     if (index == null) {
@@ -203,7 +223,7 @@ class StateTransitions extends React.PureComponent<Props> {
     const onlyTopicsHeight = paths.length * 55;
     const heightPerTopic = onlyTopicsHeight / paths.length;
     const xAxisHeight = 30;
-    const height = onlyTopicsHeight + xAxisHeight;
+    const height = Math.max(80, onlyTopicsHeight + xAxisHeight);
 
     return (
       <SRoot>

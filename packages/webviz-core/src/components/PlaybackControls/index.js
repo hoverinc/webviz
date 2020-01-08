@@ -1,6 +1,6 @@
 // @flow
 //
-//  Copyright (c) 2018-present, GM Cruise LLC
+//  Copyright (c) 2018-present, Cruise LLC
 //
 //  This source code is licensed under the Apache License, Version 2.0,
 //  found in the LICENSE file in the root directory of this source tree.
@@ -131,8 +131,9 @@ export class UnconnectedPlaybackControls extends React.PureComponent<Props> {
         "Player is initializing..."
       ) : (
         <span>
-          Drop a <a href="http://wiki.ros.org/ROS/Tutorials/Recording%20and%20playing%20back%20data">ROS bag file</a> to
-          get started. Or check out <a href="/worldview">Worldview</a> and other packages on{" "}
+          Drop a <a href="http://wiki.ros.org/ROS/Tutorials/Recording%20and%20playing%20back%20data">ROS bag file</a> or
+          connect to a <a href="http://wiki.ros.org/rosbridge_suite/Tutorials/RunningRosbridge">rosbridge</a> to get
+          started. Or check out <a href="/worldview">Worldview</a> and other packages on{" "}
           <a href="https://github.com/cruise-automation">GitHub</a>!
         </span>
       );
@@ -181,7 +182,7 @@ export class UnconnectedPlaybackControls extends React.PureComponent<Props> {
               value={value}
               draggable
               onChange={this.onChange}
-              renderSlider={(value) => (value == null ? null : <StyledMarker width={value} />)}
+              renderSlider={(val) => (val == null ? null : <StyledMarker width={val} />)}
             />
           </div>
         </div>
