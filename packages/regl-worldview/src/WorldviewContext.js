@@ -236,9 +236,12 @@ export class WorldviewContext {
     const { regl, camera, _fbo } = this.initializedData;
     const { width, height } = this.dimension;
 
-    const x = canvasX;
+    // prevent x to reach the canvas width, otherwise regl read pixel will error
+    const x = Math.min(canvasX, width - 1);
+
     // 0,0 corresponds to the bottom left in the webgl context, but the top left in window coordinates
-    const y = height - canvasY;
+    // prevent y to reach the canvas height, otherwise regl read pixel will error
+    const y = height - Math.max(canvasY, 1);
 
     // regl will only resize the framebuffer if the size changed
     // it uses floored whole pixel values
