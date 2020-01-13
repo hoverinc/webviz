@@ -6,6 +6,7 @@
 //  found in the LICENSE file in the root directory of this source tree.
 //  You may not use this file except in compliance with the License.
 
+import clamp from "lodash/clamp";
 import mapValues from "lodash/mapValues";
 import pickBy from "lodash/pickBy";
 import * as React from "react";
@@ -239,10 +240,10 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const { width, height, right, bottom } = boundingClientRect;
 
     // convert to normalized coordinates in the canvas
-    const normalizedX = ((clientX - (right - width)) / width) * 2 - 1;
-    const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
-    const normalizedDragStartX = ((_dragStartPos.x - (right - width)) / width) * 2 - 1;
-    const normalizedDragStartY = -(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1;
+    const normalizedX = clamp(((clientX - (right - width)) / width) * 2 - 1, -1, 1);
+    const normalizedY = clamp(-(((clientY - (bottom - height)) / height) * 2) + 1, -1, 1);
+    const normalizedDragStartX = clamp(((_dragStartPos.x - (right - width)) / width) * 2 - 1, -1, 1);
+    const normalizedDragStartY = clamp(-(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1, -1, 1);
 
     // use normalized coordinates to calculate offset position in the canvas
     const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
@@ -305,8 +306,8 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const { width, height, right, bottom } = boundingClientRect;
 
     // convert to normalized coordinates in the canvas
-    const normalizedX = ((clientX - (right - width)) / width) * 2 - 1;
-    const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
+    const normalizedX = clamp(((clientX - (right - width)) / width) * 2 - 1, -1, 1);
+    const normalizedY = clamp(-(((clientY - (bottom - height)) / height) * 2) + 1, -1, 1);
 
     // use normalized coordinates to calculate offset position in the canvas
     const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
