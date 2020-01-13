@@ -38,6 +38,7 @@ type Props = {|
   cameraStore: CameraStore,
   keyMap?: CameraKeyMap,
   shiftKeys: boolean,
+  pointerLockDisabled: boolean,
   children?: React.ChildrenArray<React.Element<any> | null>,
 |};
 
@@ -206,7 +207,9 @@ export default class CameraListener extends React.Component<Props> {
   };
 
   startDragging(e: MouseEvent) {
-    if (e.button !== 0 && this._el && typeof this._el.requestPointerLock === "function") {
+    const { pointerLockDisabled } = this.props;
+    // disable pointer lock - TODO control this with a prop such as disableCameraControl
+    if (!pointerLockDisabled && e.button !== 0 && this._el && typeof this._el.requestPointerLock === "function") {
       this._el.requestPointerLock();
     }
     window.addEventListener("mousemove", this._onWindowMouseMove);
@@ -363,7 +366,7 @@ export default class CameraListener extends React.Component<Props> {
     // stop the wheel event here, as wheel propagation through the entire dom
     // can cause the browser to slow down & thrash
     e.preventDefault();
-    e.stopPropagation();
+    // e.stopPropagation();
     this._shiftKey = e.shiftKey;
 
     // with osx trackpad scrolling, slow to medium pixelY is around +/- 1 to 10

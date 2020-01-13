@@ -13,18 +13,18 @@ import Worldview, { type Props } from "../index";
 
 export default class Container extends React.Component<Props> {
   state = {
-    worldviewCamState: this.props.cameraState || this.props.defaultCameraState,
+    cameraState: this.props.defaultCameraState,
   };
 
   onCameraStateChange = (worldviewCamState) => {
-    this.setState({ worldviewCamState });
+    this.setState({ cameraState: worldviewCamState });
     if (this.props.onCameraStateChange) {
       this.props.onCameraStateChange(worldviewCamState);
     }
   };
 
   render() {
-    const { worldviewCamState } = this.state;
+    const worldviewCamState = this.props.cameraState || this.state.cameraState;
     const worldviewCamStateInfo = Object.keys(worldviewCamState)
       .map((key) => `${key}: ${worldviewCamState[key]}`)
       .join("\n");

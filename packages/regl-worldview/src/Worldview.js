@@ -46,6 +46,7 @@ export type BaseProps = {|
   children?: React.Node,
   style: { [styleAttribute: string]: number | string },
 
+  pointerLockDisabled?: boolean,
   cameraState?: $Shape<CameraState>,
   onCameraStateChange?: (CameraState) => void,
   defaultCameraState?: $Shape<CameraState>,
@@ -183,21 +184,111 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
   };
 
   _onMouseMove = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
-    this._onMouseInteraction(e, "onMouseMove");
+    const { _dragStartPos } = this;
+    if (!_dragStartPos) {
+      this._onMouseInteraction(e, "onMouseMove");
+      return;
+    }
+
+    const { clientX, clientY } = e;
+    const deltaX = clientX - _dragStartPos.x;
+    const deltaY = clientY - _dragStartPos.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
+      this._onMouseInteraction(e, "onMouseMove");
+      return;
+    }
+
+    this._onMouseDragInteraction(e, "onMouseMove");
   };
 
   _onMouseUp = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
-    this._onMouseInteraction(e, "onMouseUp");
     const { _dragStartPos } = this;
-    if (_dragStartPos) {
-      const deltaX = e.clientX - _dragStartPos.x;
-      const deltaY = e.clientY - _dragStartPos.y;
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
-        this._onMouseInteraction(e, "onClick");
-      }
-      this._dragStartPos = null;
+    if (!_dragStartPos) {
+      this._onMouseInteraction(e, "onMouseUp");
+      return;
     }
+
+    const { clientX, clientY } = e;
+    const deltaX = clientX - _dragStartPos.x;
+    const deltaY = clientY - _dragStartPos.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+    if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
+      this._onMouseInteraction(e, "onMouseUp");
+      this._onMouseInteraction(e, "onClick");
+      this._dragStartPos = null;
+      return;
+    }
+
+    this._onMouseDragInteraction(e, "onMouseUp");
+    this._dragStartPos = null;
+  };
+
+  // read hitmap within a bounding box for drag interactions
+  _onMouseDragInteraction = (e: SyntheticMouseEvent<HTMLCanvasElement>, mouseEventName: MouseEventEnum) => {
+    const { _dragStartPos } = this;
+    if (!_dragStartPos) {
+      return;
+    }
+
+    const { clientX, clientY } = e;
+    const { clientWidth, clientHeight } = e.target;
+    const boundingClientRect = e.target.getBoundingClientRect();
+    const { width, height, right, bottom } = boundingClientRect;
+
+    // convert to normalized coordinates in the canvas
+    const normalizedX = ((clientX - (right - width)) / width) * 2 - 1;
+    const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
+    const normalizedDragStartX = ((_dragStartPos.x - (right - width)) / width) * 2 - 1;
+    const normalizedDragStartY = -(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1;
+
+    // use normalized coordinates to calculate offset position in the canvas
+    const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
+    const offsetY = Math.floor(((-normalizedY + 1) * clientHeight) / 2);
+    const dragStartOffsetX = Math.floor(((normalizedDragStartX + 1) * clientWidth) / 2);
+    const dragStartOffsetY = Math.floor(((-normalizedDragStartY + 1) * clientHeight) / 2);
+
+    const deltaX = offsetX - dragStartOffsetX;
+    const deltaY = offsetY - dragStartOffsetY;
+
+    const { worldviewContext } = this.state;
+    const worldviewHandler = this.props[mouseEventName];
+
+    if (!(e.target instanceof window.HTMLElement) || e.button !== 0) {
+      return;
+    }
+
+    const canvasX = offsetX;
+    const canvasY = offsetY;
+    const ray = worldviewContext.raycast(canvasX, canvasY);
+    if (!ray) {
+      return;
+    }
+    const x = deltaX > 0 ? canvasX - deltaX : canvasX;
+    const y = deltaY > 0 ? canvasY : canvasY - deltaY;
+
+    // reading hitmap is async so we need to persist the event to use later in the event handler
+    (e: any).persist();
+    worldviewContext
+      .readHitmapBox(x, y, Math.abs(deltaX), Math.abs(deltaY))
+      .then((mouseEventsWithCommands) => {
+        const mouseEventsByCommand: Map<Command, Array<MouseEventObject>> = aggregate(mouseEventsWithCommands);
+        for (const [command, mouseEvents] of mouseEventsByCommand.entries()) {
+          command.handleMouseEvent(mouseEvents, ray, e, mouseEventName);
+          if (e.isPropagationStopped()) {
+            break;
+          }
+        }
+        if (worldviewHandler && !e.isPropagationStopped()) {
+          const mouseEvents = mouseEventsWithCommands.map(([mouseEventObject]) => mouseEventObject);
+          handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler);
+        }
+      })
+      .catch((e) => {
+        console.error(e);
+      });
   };
 
   _onMouseInteraction = (e: SyntheticMouseEvent<HTMLCanvasElement>, mouseEventName: MouseEventEnum) => {
@@ -208,11 +299,21 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    const { top: clientTop, left: clientLeft } = e.target.getBoundingClientRect();
     const { clientX, clientY } = e;
+    const { clientWidth, clientHeight } = e.target;
+    const boundingClientRect = e.target.getBoundingClientRect();
+    const { width, height, right, bottom } = boundingClientRect;
 
-    const canvasX = clientX - clientLeft;
-    const canvasY = clientY - clientTop;
+    // convert to normalized coordinates in the canvas
+    const normalizedX = ((clientX - (right - width)) / width) * 2 - 1;
+    const normalizedY = -(((clientY - (bottom - height)) / height) * 2) + 1;
+
+    // use normalized coordinates to calculate offset position in the canvas
+    const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
+    const offsetY = Math.floor(((-normalizedY + 1) * clientHeight) / 2);
+
+    const canvasX = offsetX;
+    const canvasY = offsetY;
     const ray = worldviewContext.raycast(canvasX, canvasY);
     if (!ray) {
       return;
@@ -295,7 +396,17 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
   }
 
   render() {
-    const { width, height, showDebug, keyMap, shiftKeys, style, cameraState, onCameraStateChange } = this.props;
+    const {
+      width,
+      height,
+      showDebug,
+      keyMap,
+      shiftKeys,
+      style,
+      cameraState,
+      onCameraStateChange,
+      pointerLockDisabled,
+    } = this.props;
     const { worldviewContext } = this.state;
     // If we are supplied controlled camera state and no onCameraStateChange callback
     // then there is a 'fixed' camera from outside of worldview itself.
@@ -322,7 +433,11 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
         {isFixedCamera ? (
           canvasHtml
         ) : (
-          <CameraListener cameraStore={worldviewContext.cameraStore} keyMap={keyMap} shiftKeys={shiftKeys}>
+          <CameraListener
+            pointerLockDisabled={pointerLockDisabled}
+            cameraStore={worldviewContext.cameraStore}
+            keyMap={keyMap}
+            shiftKeys={shiftKeys}>
             {canvasHtml}
           </CameraListener>
         )}

@@ -127,6 +127,7 @@ class CameraStateStory extends React.Component<Props, State> {
               distance: 150,
               thetaOffset: 0.5,
               phi: 1,
+              roll: 0,
               target: [0, 0, 0],
               targetOffset: [0, 0, 0],
               targetOrientation: [0, 0, 0, 1],
@@ -168,6 +169,14 @@ stories
       max: Math.PI,
       step: 0.01,
     });
+
+    const roll = number("roll", 0, {
+      range: true,
+      min: 0,
+      max: Math.PI * 2,
+      step: 0.01,
+    });
+
     const orientationX = number("orientation - x", 0, {
       range: true,
       min: 0,
@@ -258,6 +267,7 @@ stories
       distance,
       thetaOffset,
       phi,
+      roll,
       target,
       targetOffset,
       targetOrientation,
