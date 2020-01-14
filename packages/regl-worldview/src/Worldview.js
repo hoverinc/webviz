@@ -47,6 +47,8 @@ export type BaseProps = {|
   children?: React.Node,
   style: { [styleAttribute: string]: number | string },
 
+  readHitmapBoxOnDrag?: boolean,
+  disableCameraControls?: boolean,
   pointerLockDisabled?: boolean,
   cameraState?: $Shape<CameraState>,
   onCameraStateChange?: (CameraState) => void,
@@ -186,6 +188,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
 
   _onMouseMove = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
     const { _dragStartPos } = this;
+    const { readHitmapBoxOnDrag } = this.props;
     if (!_dragStartPos) {
       this._onMouseInteraction(e, "onMouseMove");
       return;
@@ -196,7 +199,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const deltaY = clientY - _dragStartPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
+    if (distance < DEFAULT_MOUSE_CLICK_RADIUS || !readHitmapBoxOnDrag) {
       this._onMouseInteraction(e, "onMouseMove");
       return;
     }
@@ -206,6 +209,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
 
   _onMouseUp = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
     const { _dragStartPos } = this;
+    const { readHitmapBoxOnDrag } = this.props;
     if (!_dragStartPos) {
       this._onMouseInteraction(e, "onMouseUp");
       return;
@@ -223,7 +227,13 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    this._onMouseDragInteraction(e, "onMouseUp");
+    if (readHitmapBoxOnDrag) {
+      this._onMouseDragInteraction(e, "onMouseUp");
+      this._dragStartPos = null;
+      return;
+    }
+
+    this._onMouseInteraction(e, "onMouseUp");
     this._dragStartPos = null;
   };
 
