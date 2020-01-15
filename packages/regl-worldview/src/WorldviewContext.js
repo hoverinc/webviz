@@ -257,7 +257,7 @@ export class WorldviewContext {
         let currentObjectId = 0;
         const excludedObjects = [];
         const mouseEventsWithCommands = [];
-        const dragEventsWithCommands = [];
+        let dragEventsWithCommands = [];
         let counter = 0;
 
         camera.draw(this.cameraStore.state, () => {
@@ -357,6 +357,10 @@ export class WorldviewContext {
                 }
               }
             });
+          } else {
+            // hitboxObject should always be an extension of the single-pixel hit objects
+            // and thus should always contained at least the objects in single-pixel hit
+            dragEventsWithCommands = mouseEventsWithCommands;
           }
 
           resolve({
