@@ -223,12 +223,14 @@ export class WorldviewContext {
 
   _debouncedPaint = debounce(this.paint, 10);
 
-  readHitmapBox(
+  readHitmap(
     canvasX: number,
     canvasY: number,
-    hitboxWidth: number = 1,
-    hitboxHeight: number = 1
-  ): Promise<Array<[MouseEventObject, Command]>> {
+    hitboxWidth: number,
+    hitboxHeight: number,
+    enableStackedObjectEvents: boolean,
+    maxStackedObjectCount: number
+  ): Promise<Array<[MouseEventObject, Command<any>]>> {
     if (!this.initializedData) {
       return new Promise((_, reject) => reject(new Error("regl data not initialized yet")));
     }
@@ -252,72 +254,10 @@ export class WorldviewContext {
       regl({ framebuffer: _fbo })(() => {
         // clear the framebuffer
         regl.clear({ color: intToRGB(0), depth: 1 });
-        // const currentObjectId = 0;
-        const excludedObjects = [];
-        const mouseEventsWithCommands = [];
-
-        camera.draw(this.cameraStore.state, () => {
-          regl.clear({ color: intToRGB(0), depth: 1 });
-          this._drawInput(true, excludedObjects);
-
-          // make sure the hitbox dimension never exceed the regl framebuffer dimension
-          const w = clamp(hitboxWidth, 1, width - x);
-          const h = clamp(hitboxHeight, 1, height - y);
-
-          const pixels = regl.read({
-            x,
-            y,
-            width: w,
-            height: h,
-          });
-          const hitIds = getIdsFromPixels(pixels);
-
-          hitIds.forEach((currentObjectId) => {
-            const mouseEventObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(currentObjectId);
-            if (currentObjectId > 0 && mouseEventObject.object) {
-              const command = this._hitmapObjectIdManager.getCommandForObject(mouseEventObject.object);
-              excludedObjects.push(mouseEventObject);
-              if (command) {
-                mouseEventsWithCommands.push([mouseEventObject, command]);
-              }
-            }
-          });
-
-          resolve(mouseEventsWithCommands);
-        });
-      });
-    });
-  }
-
-  readHitmap(
-    canvasX: number,
-    canvasY: number,
-    enableStackedObjectEvents: boolean,
-    maxStackedObjectCount: number
-  ): Promise<Array<[MouseEventObject, Command<any>]>> {
-    if (!this.initializedData) {
-      return new Promise((_, reject) => reject(new Error("regl data not initialized yet")));
-    }
-
-    const { regl, camera, _fbo } = this.initializedData;
-    const { width, height } = this.dimension;
-
-    const x = canvasX;
-    // 0,0 corresponds to the bottom left in the webgl context, but the top left in window coordinates
-    const y = height - canvasY;
-
-    // regl will only resize the framebuffer if the size changed
-    // it uses floored whole pixel values
-    _fbo.resize(Math.floor(width), Math.floor(height));
-
-    return new Promise((resolve) => {
-      // tell regl to use a framebuffer for this render
-      regl({ framebuffer: _fbo })(() => {
-        // clear the framebuffer
-        regl.clear({ color: intToRGB(0), depth: 1 });
         let currentObjectId = 0;
         const excludedObjects = [];
         const mouseEventsWithCommands = [];
+        let dragEventsWithCommands = [];
         let counter = 0;
 
         camera.draw(this.cameraStore.state, () => {
@@ -391,7 +331,42 @@ export class WorldviewContext {
             // eslint-disable-next-line no-unmodified-loop-condition
           } while (currentObjectId !== 0 && enableStackedObjectEvents);
 
-          resolve(mouseEventsWithCommands);
+          if (hitboxWidth > 1 || hitboxHeight > 1) {
+            regl.clear({ color: intToRGB(0), depth: 1 });
+            this._drawInput(true, excludedObjects);
+
+            // make sure the hitbox dimension never exceed the regl framebuffer dimension
+            const w = clamp(hitboxWidth, 1, width - x);
+            const h = clamp(hitboxHeight, 1, height - y);
+
+            const pixels = regl.read({
+              x,
+              y,
+              width: w,
+              height: h,
+            });
+            const hitIds = getIdsFromPixels(pixels);
+
+            hitIds.forEach((currentObjectId) => {
+              const mouseEventObject = this._hitmapObjectIdManager.getObjectByObjectHitmapId(currentObjectId);
+              if (currentObjectId > 0 && mouseEventObject.object) {
+                const command = this._hitmapObjectIdManager.getCommandForObject(mouseEventObject.object);
+                excludedObjects.push(mouseEventObject);
+                if (command) {
+                  dragEventsWithCommands.push([mouseEventObject, command]);
+                }
+              }
+            });
+          } else {
+            // hitboxObject should always be an extension of the single-pixel hit objects
+            // and thus should always contained at least the objects in single-pixel hit
+            dragEventsWithCommands = mouseEventsWithCommands;
+          }
+
+          resolve({
+            mouseEventsWithCommands,
+            dragEventsWithCommands,
+          });
         });
       });
     });

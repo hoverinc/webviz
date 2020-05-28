@@ -110,13 +110,14 @@ export default class Command<T> extends React.Component<Props<T>> {
     objects: MouseEventObject[],
     ray: Ray,
     e: SyntheticMouseEvent<HTMLCanvasElement>,
-    mouseEventName: MouseEventEnum
+    mouseEventName: MouseEventEnum,
+    hitboxObjects: MouseEventObject[]
   ) {
     const mouseHandler = this.props[mouseEventName];
     if (!mouseHandler || !objects.length) {
       return;
     }
-    mouseHandler(e, { ray, objects });
+    mouseHandler(e, { ray, objects, hitboxObjects });
   }
 
   render() {

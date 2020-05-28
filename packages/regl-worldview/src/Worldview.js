@@ -47,6 +47,8 @@ export type BaseProps = {|
   children?: React.Node,
   style: { [styleAttribute: string]: number | string },
 
+  readHitmapBoxOnDrag?: boolean,
+  disableCameraControls?: boolean,
   pointerLockDisabled?: boolean,
   cameraState?: $Shape<CameraState>,
   onCameraStateChange?: (CameraState) => void,
@@ -68,9 +70,10 @@ function handleWorldviewMouseInteraction(
   objects: MouseEventObject[],
   ray: Ray,
   e: SyntheticMouseEvent<HTMLCanvasElement>,
-  handler: MouseHandler
+  handler: MouseHandler,
+  hitboxObjects: MouseEventObject[]
 ) {
-  const args = { ray, objects };
+  const args = { ray, objects, hitboxObjects };
 
   try {
     handler(e, args);
@@ -186,6 +189,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
 
   _onMouseMove = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
     const { _dragStartPos } = this;
+    const { readHitmapBoxOnDrag } = this.props;
     if (!_dragStartPos) {
       this._onMouseInteraction(e, "onMouseMove");
       return;
@@ -196,16 +200,19 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const deltaY = clientY - _dragStartPos.y;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-    if (distance < DEFAULT_MOUSE_CLICK_RADIUS) {
+    if (distance < DEFAULT_MOUSE_CLICK_RADIUS || !readHitmapBoxOnDrag) {
       this._onMouseInteraction(e, "onMouseMove");
       return;
     }
 
-    this._onMouseDragInteraction(e, "onMouseMove");
+    this._onMouseInteraction(e, "onMouseMove", {
+      readHitmapBox: true,
+    });
   };
 
   _onMouseUp = (e: SyntheticMouseEvent<HTMLCanvasElement>) => {
     const { _dragStartPos } = this;
+    const { readHitmapBoxOnDrag } = this.props;
     if (!_dragStartPos) {
       this._onMouseInteraction(e, "onMouseUp");
       return;
@@ -223,76 +230,17 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
       return;
     }
 
-    this._onMouseDragInteraction(e, "onMouseUp");
+    if (readHitmapBoxOnDrag) {
+      this._onMouseInteraction(e, "onMouseUp", { readHitmapBox: true });
+      this._dragStartPos = null;
+      return;
+    }
+
+    this._onMouseInteraction(e, "onMouseUp");
     this._dragStartPos = null;
   };
 
-  // read hitmap within a bounding box for drag interactions
-  _onMouseDragInteraction = (e: SyntheticMouseEvent<HTMLCanvasElement>, mouseEventName: MouseEventEnum) => {
-    const { _dragStartPos } = this;
-    if (!_dragStartPos) {
-      return;
-    }
-
-    const { clientX, clientY } = e;
-    const { clientWidth, clientHeight } = e.target;
-    const boundingClientRect = e.target.getBoundingClientRect();
-    const { width, height, right, bottom } = boundingClientRect;
-
-    // convert to normalized coordinates in the canvas
-    const normalizedX = clamp(((clientX - (right - width)) / width) * 2 - 1, -1, 1);
-    const normalizedY = clamp(-(((clientY - (bottom - height)) / height) * 2) + 1, -1, 1);
-    const normalizedDragStartX = clamp(((_dragStartPos.x - (right - width)) / width) * 2 - 1, -1, 1);
-    const normalizedDragStartY = clamp(-(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1, -1, 1);
-
-    // use normalized coordinates to calculate offset position in the canvas
-    const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
-    const offsetY = Math.floor(((-normalizedY + 1) * clientHeight) / 2);
-    const dragStartOffsetX = Math.floor(((normalizedDragStartX + 1) * clientWidth) / 2);
-    const dragStartOffsetY = Math.floor(((-normalizedDragStartY + 1) * clientHeight) / 2);
-
-    const deltaX = offsetX - dragStartOffsetX;
-    const deltaY = offsetY - dragStartOffsetY;
-
-    const { worldviewContext } = this.state;
-    const worldviewHandler = this.props[mouseEventName];
-
-    if (!(e.target instanceof window.HTMLElement) || e.button !== 0) {
-      return;
-    }
-
-    const canvasX = offsetX;
-    const canvasY = offsetY;
-    const ray = worldviewContext.raycast(canvasX, canvasY);
-    if (!ray) {
-      return;
-    }
-    const x = deltaX > 0 ? canvasX - deltaX : canvasX;
-    const y = deltaY > 0 ? canvasY : canvasY - deltaY;
-
-    // reading hitmap is async so we need to persist the event to use later in the event handler
-    (e: any).persist();
-    worldviewContext
-      .readHitmapBox(x, y, Math.abs(deltaX), Math.abs(deltaY))
-      .then((mouseEventsWithCommands) => {
-        const mouseEventsByCommand: Map<Command, Array<MouseEventObject>> = aggregate(mouseEventsWithCommands);
-        for (const [command, mouseEvents] of mouseEventsByCommand.entries()) {
-          command.handleMouseEvent(mouseEvents, ray, e, mouseEventName);
-          if (e.isPropagationStopped()) {
-            break;
-          }
-        }
-        if (worldviewHandler && !e.isPropagationStopped()) {
-          const mouseEvents = mouseEventsWithCommands.map(([mouseEventObject]) => mouseEventObject);
-          handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler);
-        }
-      })
-      .catch((e) => {
-        console.error(e);
-      });
-  };
-
-  _onMouseInteraction = (e: SyntheticMouseEvent<HTMLCanvasElement>, mouseEventName: MouseEventEnum) => {
+  _onMouseInteraction = (e: SyntheticMouseEvent<HTMLCanvasElement>, mouseEventName: MouseEventEnum, options = {}) => {
     const { worldviewContext } = this.state;
     const worldviewHandler = this.props[mouseEventName];
 
@@ -313,9 +261,27 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     const offsetX = Math.floor(((normalizedX + 1) * clientWidth) / 2);
     const offsetY = Math.floor(((-normalizedY + 1) * clientHeight) / 2);
 
-    const canvasX = offsetX;
-    const canvasY = offsetY;
-    const ray = worldviewContext.raycast(canvasX, canvasY);
+    let x = offsetX;
+    let y = offsetY;
+    let hitboxWidth = 1;
+    let hitboxHeight = 1;
+
+    if (options.readHitmapBox && this._dragStartPos) {
+      const { _dragStartPos } = this;
+      const normalizedDragStartX = clamp(((_dragStartPos.x - (right - width)) / width) * 2 - 1, -1, 1);
+      const normalizedDragStartY = clamp(-(((_dragStartPos.y - (bottom - height)) / height) * 2) + 1, -1, 1);
+      const dragStartOffsetX = Math.floor(((normalizedDragStartX + 1) * clientWidth) / 2);
+      const dragStartOffsetY = Math.floor(((-normalizedDragStartY + 1) * clientHeight) / 2);
+      const deltaX = offsetX - dragStartOffsetX;
+      const deltaY = offsetY - dragStartOffsetY;
+
+      x = deltaX > 0 ? offsetX - deltaX : offsetX;
+      y = deltaY > 0 ? offsetY : offsetY - deltaY;
+      hitboxWidth = Math.abs(deltaX);
+      hitboxHeight = Math.abs(deltaY);
+    }
+
+    const ray = worldviewContext.raycast(x, y);
     if (!ray) {
       return;
     }
@@ -323,7 +289,7 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     // rendering the hitmap on mouse move is expensive, so disable it by default
     if (mouseEventName === "onMouseMove" && !this.props.hitmapOnMouseMove) {
       if (worldviewHandler) {
-        return handleWorldviewMouseInteraction([], ray, e, worldviewHandler);
+        return handleWorldviewMouseInteraction([], ray, e, worldviewHandler, []);
       }
       return;
     }
@@ -331,18 +297,29 @@ export class WorldviewBase extends React.Component<BaseProps, State> {
     // reading hitmap is async so we need to persist the event to use later in the event handler
     (e: any).persist();
     worldviewContext
-      .readHitmap(canvasX, canvasY, !!this.props.enableStackedObjectEvents, this.props.maxStackedObjectCount)
-      .then((mouseEventsWithCommands) => {
+      .readHitmap(
+        x,
+        y,
+        hitboxWidth,
+        hitboxHeight,
+        !!this.props.enableStackedObjectEvents,
+        this.props.maxStackedObjectCount
+      )
+      .then(({ mouseEventsWithCommands, dragEventsWithCommands }) => {
         const mouseEventsByCommand: Map<Command<any>, Array<MouseEventObject>> = aggregate(mouseEventsWithCommands);
+        const dragEventsByCommand: Map<Command<any>, Array<MouseEventObject>> = aggregate(dragEventsWithCommands);
+
         for (const [command, mouseEvents] of mouseEventsByCommand.entries()) {
-          command.handleMouseEvent(mouseEvents, ray, e, mouseEventName);
+          const dragEvents = dragEventsByCommand.get(command);
+          command.handleMouseEvent(mouseEvents, ray, e, mouseEventName, dragEvents);
           if (e.isPropagationStopped()) {
             break;
           }
         }
         if (worldviewHandler && !e.isPropagationStopped()) {
           const mouseEvents = mouseEventsWithCommands.map(([mouseEventObject]) => mouseEventObject);
-          handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler);
+          const dragEvents = dragEventsWithCommands.map(([dragEventObject]) => dragEventObject);
+          handleWorldviewMouseInteraction(mouseEvents, ray, e, worldviewHandler, dragEvents);
         }
       })
       .catch((e) => {
